@@ -13,7 +13,6 @@ export function ShopCard({ shop, onSelect }: ShopCardProps) {
       <button type="button" onClick={() => onSelect(shop.id)} className="block w-full text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-[#d9937b]" aria-label={`${shop.name}の詳細を見る`}>
         <div className="relative overflow-hidden">
           <ShopImage shop={shop} className="aspect-[1.58] w-full transition duration-500 group-hover:scale-[1.025]" sizes="(min-width: 900px) 42vw, 90vw" />
-          <span className="absolute left-3 top-3 rounded-full bg-white/92 px-3 py-1.5 text-[10px] font-semibold text-[#55635a] shadow-sm backdrop-blur">{shop.distance}</span>
           <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-[#27342c]/90 px-2.5 py-1.5 text-[10px] font-semibold text-white backdrop-blur"><Star size={11} fill="currentColor" aria-hidden="true" />{shop.reviewScore}</span>
         </div>
         <div className="p-4 sm:p-5">

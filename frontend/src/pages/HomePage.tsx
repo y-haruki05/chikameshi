@@ -2,13 +2,16 @@ import { ArrowDownRight, ArrowRight, LocateFixed, MapPin, Sparkles, Utensils } f
 import { SearchCondition } from "../components/SearchCondition";
 import type { SearchRange } from "../types/demo";
 
+import type { useGeolocation } from "../hooks/useGeolocation";
+
 interface HomePageProps {
+  geolocation: ReturnType<typeof useGeolocation>;
   range: SearchRange;
   onRangeChange: (range: SearchRange) => void;
   onSearch: () => void;
 }
 
-export function HomePage({ range, onRangeChange, onSearch }: HomePageProps) {
+export function HomePage({ range, onRangeChange, onSearch, geolocation }: HomePageProps) {
   return (
     <main>
       <section className="mx-auto grid max-w-7xl gap-12 px-5 pb-16 pt-9 sm:px-8 lg:min-h-[650px] lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:gap-8 lg:px-12 lg:pb-24 lg:pt-7">
@@ -31,20 +34,28 @@ export function HomePage({ range, onRangeChange, onSearch }: HomePageProps) {
                 <LocateFixed size={19} aria-hidden="true" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-[#26332b]">現在地の近くから探す</p>
-                <p className="mt-0.5 text-xs text-[#858d85]">近くのレストランを距離で見つけます</p>
+                <p className="text-sm font-semibold text-[#26332b]">お店を探す</p>
+                <p className="mt-0.5 text-xs text-[#858d85]">条件を選んで、お店を見つけましょう</p>
               </div>
-              <span className="ml-auto hidden rounded-full bg-[#f7f4ed] px-2.5 py-1 text-[10px] font-semibold text-[#8e7855] sm:inline-flex">サンプル表示</span>
             </div>
             <SearchCondition value={range} onChange={onRangeChange} />
+            <button type="button" onClick={geolocation.request} disabled={geolocation.status === "loading"}
+              className="mt-5 min-h-11 w-full rounded-xl border border-[#c75d3e] px-4 py-3 text-sm font-semibold text-[#a84f35] disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#e8b5a5]">
+              {geolocation.status === "loading" ? "現在地を取得中…" : geolocation.status === "error" ? "現在地の取得を再試行" : "現在地を取得"}
+            </button>
+            <div role="status" aria-live="polite" aria-atomic="true" className={`${geolocation.status === "loading" || geolocation.status === "success" ? "mt-3 " : ""}text-sm leading-6 text-[#51745a]`}>
+              {geolocation.status === "loading" && "ブラウザの位置情報の許可を確認しています…"}
+              {geolocation.status === "success" && "現在地を取得しました"}
+            </div>
+            {geolocation.status === "error" && <p role="alert" className="mt-3 text-sm leading-6 text-[#a84f35]">{geolocation.error}</p>}
             <button
               type="button"
               onClick={onSearch}
-              className="mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-xl bg-[#c75d3e] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_8px_18px_-10px_rgba(168,67,42,0.8)] transition hover:bg-[#ad4e33] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#e8b5a5] active:translate-y-px"
+              disabled={geolocation.status !== "success"}
+              className="mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-xl bg-[#c75d3e] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_8px_18px_-10px_rgba(168,67,42,0.8)] transition disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#ad4e33] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#e8b5a5] active:translate-y-px"
             >
-              近くのお店を探す <ArrowRight size={17} aria-hidden="true" />
+              この条件でお店を探す <ArrowRight size={17} aria-hidden="true" />
             </button>
-            <p className="mt-3 text-center text-[11px] leading-5 text-[#929990]">現在地の利用は、ブラウザの許可後に行います</p>
           </div>
         </div>
 
@@ -53,12 +64,12 @@ export function HomePage({ range, onRangeChange, onSearch }: HomePageProps) {
           <div className="absolute -left-2 bottom-7 size-20 rounded-full bg-[#dfe9d8] sm:-left-5 sm:size-28" />
           <div className="relative grid grid-cols-[1.14fr_0.86fr] items-center gap-3 sm:gap-4">
             <figure className="relative overflow-hidden rounded-[1.65rem] shadow-[0_25px_55px_-33px_rgba(32,43,37,0.6)] sm:rounded-[2rem]">
-              <img src="https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=900&q=85" alt="彩り豊かな料理のサンプル写真" className="aspect-[0.83] w-full object-cover" />
+              <img src="https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=900&q=85" alt="彩り豊かな料理の写真" className="aspect-[0.83] w-full object-cover" />
               <figcaption className="absolute bottom-3 left-3 rounded-full bg-white/90 px-3 py-1.5 text-[10px] font-medium text-[#58645b] backdrop-blur sm:bottom-4 sm:left-4 sm:text-xs">写真はイメージです</figcaption>
             </figure>
             <div className="space-y-3 sm:space-y-4">
               <figure className="overflow-hidden rounded-[1.4rem] shadow-[0_20px_45px_-32px_rgba(32,43,37,0.55)] sm:rounded-[1.7rem]">
-                <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=700&q=85" alt="落ち着いた雰囲気のレストランのサンプル写真" className="aspect-[1.22] w-full object-cover" />
+                <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=700&q=85" alt="落ち着いた雰囲気のレストランの写真" className="aspect-[1.22] w-full object-cover" />
               </figure>
               <div className="rounded-[1.4rem] border border-[#e8e7df] bg-white p-4 shadow-[0_16px_38px_-28px_rgba(32,43,37,0.45)] sm:rounded-[1.7rem] sm:p-5">
                 <div className="mb-4 flex items-center gap-2 text-[#63816a]"><MapPin size={15} aria-hidden="true" /><span className="text-[10px] font-bold tracking-[0.12em] sm:text-xs">NEAR YOU</span></div>
@@ -66,7 +77,7 @@ export function HomePage({ range, onRangeChange, onSearch }: HomePageProps) {
                 <div className="mt-4 flex items-center gap-2 text-[11px] text-[#858d85]"><span className="flex size-6 items-center justify-center rounded-full bg-[#f7eee8] text-[#c75d3e]"><Utensils size={12} aria-hidden="true" /></span>街の小さなお店も</div>
               </div>
               <figure className="hidden overflow-hidden rounded-[1.4rem] shadow-[0_20px_45px_-32px_rgba(32,43,37,0.55)] sm:block sm:rounded-[1.7rem]">
-                <img src="https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&w=700&q=85" alt="あたたかな照明の店内のサンプル写真" className="aspect-[1.85] w-full object-cover" />
+                <img src="https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&w=700&q=85" alt="あたたかな照明の店内の写真" className="aspect-[1.85] w-full object-cover" />
               </figure>
             </div>
           </div>
@@ -79,7 +90,7 @@ export function HomePage({ range, onRangeChange, onSearch }: HomePageProps) {
       <section id="how-it-works" className="border-y border-[#eeede7] bg-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-12 sm:px-8 md:grid-cols-3 md:gap-10 md:py-16 lg:px-12">
           {[
-            { number: "01", title: "近くのお店を探す", text: "今いる場所を中心に、行きやすいお店を見つけます。" },
+            { number: "01", title: "近くのお店を探す", text: "条件を選んで、気になるお店を見つけます。" },
             { number: "02", title: "気になる一軒を選ぶ", text: "写真やアクセスを見比べて、今日の気分に合わせて。" },
             { number: "03", title: "お店へ出かける", text: "詳しい営業時間や予約は、お店のページで確認できます。" },
           ].map((step) => (

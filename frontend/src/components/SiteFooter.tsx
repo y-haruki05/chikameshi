@@ -10,11 +10,10 @@ export function SiteFooter() {
           </a>
           <p className="mt-2 flex items-center gap-1 text-[11px] text-[#858d85]">近くのおいしいに出会う、小さなきっかけ。 <Heart size={11} className="text-[#c75d3e]" aria-hidden="true" /></p>
         </div>
-        <div className="flex flex-col gap-2 text-[11px] text-[#777f77] md:items-end">
+        <div className="text-[11px] text-[#777f77]">
           <a href="https://webservice.recruit.co.jp/" target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1 font-medium text-[#58645b] underline decoration-[#aab5aa] underline-offset-4 hover:text-[#a84f35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c75d3e]">
             Powered by ホットペッパーグルメ Webサービス <ArrowUpRight size={12} aria-hidden="true" />
           </a>
-          <span>掲載画像はサンプルです。写真はイメージです。</span>
         </div>
       </div>
     </footer>

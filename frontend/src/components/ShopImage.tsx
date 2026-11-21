@@ -31,5 +31,5 @@ export function ShopImage({ shop, className = "", sizes }: ShopImageProps) {
     );
   }
 
-  return <img src={imageUrl} alt={`${shop.name}のサンプル写真`} sizes={sizes} loading="lazy" onError={() => setFailedImage({ key: imageKey, index: imageIndex + 1 })} className={`object-cover ${className}`} />;
+  return <img src={imageUrl} alt={`${shop.name}の写真`} sizes={sizes} loading="lazy" onError={() => setFailedImage({ key: imageKey, index: imageIndex + 1 })} className={`object-cover ${className}`} />;
 }
