@@ -12,13 +12,21 @@ const errors: Record<number, string> = {
   3: "現在地の取得がタイムアウトしました。通信環境のよい場所で再試行してください。",
 };
 
+/** 明示操作時のみ現在地を取得する。取り消し後の遅延コールバックは状態へ反映しない。 */
 export function useGeolocation() {
   const [state, setState] = useState<GeolocationState>({ status: "idle", coordinates: null, error: null });
+  // Geolocation API自体は中断できないため、世代番号で以前の要求を無効化する。
   const requestId = useRef(0);
   const pending = useRef(false);
-  useEffect(() => () => { requestId.current += 1; pending.current = false; }, []);
+  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearWatchdog = () => {
+    if (watchdog.current !== null) clearTimeout(watchdog.current);
+    watchdog.current = null;
+  };
+  useEffect(() => () => { requestId.current += 1; pending.current = false; clearWatchdog(); }, []);
 
   const cancel = () => {
+    clearWatchdog();
     requestId.current += 1;
     if (pending.current) {
       pending.current = false;
@@ -31,6 +39,7 @@ export function useGeolocation() {
     const id = ++requestId.current;
     const fail = (message: string) => {
       if (id !== requestId.current) return;
+      clearWatchdog();
       requestId.current += 1;
       pending.current = false;
       setState({ status: "error", coordinates: null, error: message });
@@ -45,6 +54,8 @@ export function useGeolocation() {
     }
     pending.current = true;
     setState({ status: "loading", coordinates: null, error: null });
+    // ブラウザのtimeout通知を待つが、通知自体が来ない場合は1秒の余裕後に打ち切る。
+    watchdog.current = setTimeout(() => fail(errors[3]), 11_000);
     try {
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => {
@@ -53,6 +64,7 @@ export function useGeolocation() {
             fail("有効な現在地を取得できませんでした。再試行してください。");
             return;
           }
+          clearWatchdog();
           requestId.current += 1;
           pending.current = false;
           setState({ status: "success", coordinates: { latitude: coords.latitude, longitude: coords.longitude }, error: null });

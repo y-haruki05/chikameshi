@@ -18,15 +18,15 @@ export function ShopCard({ shop, onSelect }: ShopCardProps) {
         <div className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-semibold tracking-wide text-[#a16a50]">{shopText(shop.genre?.name, "レストラン")}</p>
+              <p className="text-xs font-semibold tracking-wide text-[#925f47]">{shopText(shop.genre?.name, "レストラン")}</p>
               <h3 className="mt-1.5 break-words text-[16px] font-semibold leading-snug tracking-[-0.035em] text-[#27342c] sm:text-[17px]">{shopText(shop.name, "店舗名不明")}</h3>
             </div>
-            <span className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-[#eceae4] text-[#8b948b] transition group-hover:border-[#c75d3e] group-hover:bg-[#fff6f2] group-hover:text-[#b05237]"><ArrowUpRight size={15} aria-hidden="true" /></span>
+            <span className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-[#eceae4] text-[#656d65] transition group-hover:border-[#c75d3e] group-hover:bg-[#fff6f2] group-hover:text-[#aa4f35]"><ArrowUpRight size={15} aria-hidden="true" /></span>
           </div>
-          {shopText(shop.genre?.catch) && <p className="mt-2 line-clamp-1 text-xs text-[#858d85]">{shopText(shop.genre?.catch)}</p>}
-          <div className="mt-4 space-y-2 border-t border-[#f0efea] pt-3 text-xs text-[#737d74]">
-            <p className="flex items-start gap-2"><MapPin size={14} className="mt-px shrink-0 text-[#879883]" aria-hidden="true" /><span className="min-w-0 break-words">{shopText(shop.access, shopText(shop.address, "アクセス情報なし"))}</span></p>
-            <p className="flex items-start gap-2"><Wallet size={14} className="shrink-0 text-[#879883]" aria-hidden="true" /><span className="min-w-0 break-words">{shopText(shop.budget?.average, shopText(shop.budget?.name, "予算情報なし"))}</span></p>
+          {shopText(shop.genre?.catch) && <p className="mt-2 line-clamp-1 text-xs text-[#656b65]">{shopText(shop.genre?.catch)}</p>}
+          <div className="mt-4 space-y-2 border-t border-[#f0efea] pt-3 text-xs text-[#636d64]">
+            <p className="flex items-start gap-2"><MapPin size={14} className="mt-px shrink-0 text-[#627060]" aria-hidden="true" /><span className="min-w-0 break-words">{shopText(shop.access, shopText(shop.address, "アクセス情報なし"))}</span></p>
+            <p className="flex items-start gap-2"><Wallet size={14} className="shrink-0 text-[#627060]" aria-hidden="true" /><span className="min-w-0 break-words">{shopText(shop.budget?.average, shopText(shop.budget?.name, "予算情報なし"))}</span></p>
           </div>
         </div>
       </button>

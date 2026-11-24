@@ -19,3 +19,13 @@ body {
 button, a, input { -webkit-tap-highlight-color: transparent; }
 
 ::selection { color: #27342c; background: #ead5c9; }
+
+/* 本文への移動リンクはキーボード操作時だけ表示し、通常のレイアウトを変えない。 */
+.skip-link { position: fixed; top: 0.5rem; left: 0.5rem; z-index: 100; padding: 0.75rem 1rem; color: white; background: #27342c; border-radius: 0.5rem; transform: translateY(-200%); }
+.skip-link:focus { transform: translateY(0); }
+main { overflow-wrap: anywhere; scroll-margin-top: 80px; }
+main:focus { outline: none; }
+#how-it-works { scroll-margin-top: 80px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

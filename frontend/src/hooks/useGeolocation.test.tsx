@@ -1,12 +1,13 @@
 import { StrictMode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useGeolocation } from "./useGeolocation";
 
 let success: PositionCallback;
 let failure: PositionErrorCallback;
 const getCurrentPosition = vi.fn((ok: PositionCallback, error?: PositionErrorCallback | null) => { success = ok; failure = error!; });
 const position = { coords: { latitude: 35.68, longitude: 139.76 } } as GeolocationPosition;
+afterEach(() => { vi.useRealTimers(); });
 beforeEach(() => {
   getCurrentPosition.mockClear();
   vi.stubGlobal("isSecureContext", true);
@@ -72,4 +73,21 @@ describe("useGeolocation", () => {
     act(() => success({ coords: { latitude: NaN, longitude: 0 } } as GeolocationPosition));
     expect(result.current.status).toBe("error");
   });
+});
+
+
+it("recovers when the browser never invokes either geolocation callback", async () => {
+  vi.useFakeTimers();
+  const view = renderHook(useGeolocation);
+  act(() => view.result.current.request());
+  const lateSuccess = success;
+  await act(async () => { await vi.advanceTimersByTimeAsync(11_000); });
+  expect(view.result.current.status).toBe("error");
+  expect(view.result.current.error).toContain("タイムアウト");
+  act(() => view.result.current.request());
+  act(() => lateSuccess(position));
+  expect(view.result.current.status).toBe("loading");
+  act(() => success(position));
+  expect(view.result.current.status).toBe("success");
+  expect(vi.getTimerCount()).toBe(0);
 });
