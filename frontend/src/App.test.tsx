@@ -27,6 +27,8 @@ beforeEach(() => {
   vi.stubGlobal("isSecureContext", true);
   vi.stubGlobal("fetch", fetchMock);
   Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+  Element.prototype.scrollIntoView = vi.fn();
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   getCurrentPosition.mockClear();
   fetchMock.mockClear();
@@ -65,7 +67,7 @@ it("requires two steps and sends coordinates, range and API pagination; displays
   expect(lastSearch().get("lat")).toBe("35.68");
   expect(lastSearch().get("lng")).toBe("139.76");
   expect(lastSearch().get("range")).toBe("2");
-  expect(screen.getByText("25件のお店を表示しています")).toBeTruthy();
+  expect(screen.getByText("全25件中1〜12件を表示")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "2ページ目" }));
   await screen.findByText("実店舗13");
   expect(lastSearch().get("start")).toBe("13");
@@ -83,7 +85,7 @@ it("requires two steps and sends coordinates, range and API pagination; displays
   await screen.findByText("実店舗1");
   expect(lastSearch().get("range")).toBe("4");
   expect(lastSearch().get("start")).toBe("1");
-  expect(Object.keys(window.history.state)).toEqual(["searchSessionId"]);
+  expect(Object.keys(window.history.state).sort()).toEqual(["entryKey", "searchSessionId"]);
   expect(window.location.href).not.toContain("35.68");
   expect(localStorage.length).toBe(0);
   expect(sessionStorage.length).toBe(0);
@@ -217,4 +219,96 @@ it("retries empty results and re-submits an unchanged range", async () => {
   fireEvent.click(screen.getByRole("button", { name: "この範囲で表示" }));
   await screen.findByText("実店舗1");
   expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+
+it("shows the actual interval on middle and final pages", async () => {
+  render(<App />); acquireAndSearch();
+  await screen.findByText("全25件中1〜12件を表示");
+  fireEvent.click(screen.getByRole("button", { name: "2ページ目" }));
+  await screen.findByText("全25件中13〜24件を表示");
+  fireEvent.click(screen.getByRole("button", { name: "3ページ目" }));
+  await screen.findByText("全25件中25〜25件を表示");
+  expect((screen.getByRole("button", { name: "次のページ" }) as HTMLButtonElement).disabled).toBe(true);
+});
+it("distinguishes an out-of-range page from an empty search and recovers", async () => {
+  render(<App />); acquireAndSearch(); await screen.findByText("実店舗1");
+  act(() => {
+    window.history.pushState(window.history.state, "", "/search?range=3&page=99");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await screen.findByRole("heading", { name: "ページが見つかりませんでした" });
+  expect(screen.queryByText("お店が見つかりませんでした")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "最初のページへ" }));
+  await screen.findByText("全25件中1〜12件を表示");
+  expect(window.location.search).toBe("?range=3&page=1");
+});
+it("opens and focuses range controls from an empty result", async () => {
+  fetchMock.mockResolvedValueOnce(json({ data: { shops: [], pagination: { total: 0, returned: 0, start: 1, count: 12 } } }));
+  render(<App />); acquireAndSearch();
+  await screen.findByRole("heading", { name: "お店が見つかりませんでした" });
+  expect(screen.getByText("0件")).toBeTruthy();
+  const buttons = screen.getAllByRole("button", { name: /検索範囲を変更/ });
+  fireEvent.click(buttons[buttons.length - 1]);
+  expect(screen.getByRole("radio", { name: "1km" })).toBe(document.activeElement);
+  fireEvent.click(screen.getByRole("radio", { name: "3km" }));
+  fireEvent.click(screen.getByRole("button", { name: "この範囲で表示" }));
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("range")).toBe("5");
+});
+it("restores list scroll only after its delayed response and keeps forward history", async () => {
+  render(<App />); acquireAndSearch(); await screen.findByText("実店舗1");
+  vi.spyOn(window, "scrollY", "get").mockReturnValue(840);
+  fireEvent.click(screen.getByRole("button", { name: "実店舗1の詳細を見る" }));
+  await screen.findByRole("heading", { name: "実店舗1" });
+  vi.spyOn(window, "scrollY", "get").mockReturnValue(120);
+  let resolveList!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveList = resolve; }));
+  vi.mocked(window.scrollTo).mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "検索結果に戻る" }));
+  await screen.findByRole("status", { name: "お店を読み込み中" });
+  expect(window.scrollTo).not.toHaveBeenCalledWith({ top: 840, behavior: "instant" });
+  await act(async () => resolveList(responseFor("/api/shops?start=1&count=12")));
+  await screen.findByText("実店舗1");
+  expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 840, behavior: "instant" });
+  await traverse("forward");
+  await screen.findByRole("heading", { name: "実店舗1" });
+  expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 120, behavior: "instant" });
+  await traverse("back");
+  await screen.findByText("全25件中1〜12件を表示");
+});
+it("renders missing and blank shop information with useful fallbacks", async () => {
+  window.history.replaceState({}, "", "/shop/J000000001");
+  fetchMock.mockResolvedValueOnce(json({ data: { id: "J000000001", lat: 35, lng: 139, name: "  ", address: null,
+    open: " ", close: null, photo: null, budget: { average: " ", name: null }, capacity: null } }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "店舗名不明" });
+  expect(screen.getByText("住所情報なし")).toBeTruthy();
+  expect(screen.getByText("予算情報なし")).toBeTruthy();
+  expect(screen.getAllByText("店舗にお問い合わせください").length).toBeGreaterThan(0);
+  expect(screen.getByRole("img", { name: "店舗名不明の写真は現在表示できません" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /ホットペッパーグルメを見る/ })).toBeNull();
+});
+
+
+it("rejects an overflowing pagination offset without requesting it", async () => {
+  render(<App />); acquireAndSearch(); await screen.findByText("実店舗1");
+  fetchMock.mockClear();
+  act(() => {
+    window.history.pushState(window.history.state, "", "/search?range=3&page=9007199254740991");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  expect(screen.getByRole("heading", { name: "ページが見つかりませんでした" })).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "最初のページへ" }));
+  await screen.findByText("実店舗1");
+});
+it("keeps cards usable when descriptive text and images are missing", async () => {
+  fetchMock.mockResolvedValueOnce(json({ data: { shops: [{ id: "J000000001", lat: 35, lng: 139, name: null, genre: null, budget: null }],
+    pagination: { total: 1, returned: 1, start: 1, count: 12 } } }));
+  render(<App />); acquireAndSearch();
+  await screen.findByText("全1件中1〜1件を表示");
+  expect(screen.getByRole("button", { name: "店舗名不明の詳細を見る" })).toBeTruthy();
+  expect(screen.getByText("アクセス情報なし")).toBeTruthy();
+  expect(screen.getByText("予算情報なし")).toBeTruthy();
 });

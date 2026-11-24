@@ -32,16 +32,18 @@ async function request(path: string, signal?: AbortSignal): Promise<unknown> {
 export async function searchShops(params: ShopSearchParams, signal?: AbortSignal): Promise<ShopSearchResponse> {
   const query = new URLSearchParams({ lat: String(params.lat), lng: String(params.lng), range: String(params.range), start: String(params.start ?? 1), count: String(params.count ?? 12) });
   const data = await request(`/api/shops?${query}`, signal);
-  if (!isRecord(data) || !Array.isArray(data.shops) || !data.shops.every(isShop) || !isRecord(data.pagination)) throw new ShopApiError("お店の情報の形式が正しくありません。");
+  if (!isRecord(data) || !Array.isArray(data.shops) || !isRecord(data.pagination)) throw new ShopApiError("お店の情報の形式が正しくありません。");
+  const shops = data.shops.map(normalizeShop);
+  if (!shops.every(isShop)) throw new ShopApiError("お店の情報の形式が正しくありません。");
   const p = data.pagination;
   if (!nonnegativeInteger(p.total) || !nonnegativeInteger(p.returned) || !positiveInteger(p.start) || !positiveInteger(p.count)
     || p.count > 100 || p.returned !== data.shops.length || p.returned > p.count || p.returned > p.total
     || p.start !== (params.start ?? 1) || p.count !== (params.count ?? 12)) throw new ShopApiError("検索結果の件数を読み込めませんでした。");
-  return { shops: data.shops, pagination: { total: p.total, returned: p.returned, start: p.start, count: p.count } };
+  return { shops, pagination: { total: p.total, returned: p.returned, start: p.start, count: p.count } };
 }
 
 export async function getShop(id: string, signal?: AbortSignal): Promise<Shop> {
-  const data = await request(`/api/shops/${encodeURIComponent(id)}`, signal);
+  const data = normalizeShop(await request(`/api/shops/${encodeURIComponent(id)}`, signal));
   if (!isShop(data) || data.id !== id) throw new ShopApiError("お店の情報の形式が正しくありません。");
   return data;
 }
@@ -62,4 +64,20 @@ function isShop(value: unknown): value is Shop {
     && optionalStrings(value.urls, ["pc"]) && optionalStrings(value.genre, ["name", "catch"])
     && optionalStrings(value.budget, ["name", "average"])
     && (value.photo === undefined || (isRecord(value.photo) && optionalStrings(value.photo.pc, ["l", "m", "s"])));
+}
+
+// Null/missing text from the API is absent information, not a failed search.
+function normalizeShop(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const text = (input: unknown) => typeof input === "string" ? input.trim() : input ?? undefined;
+  const group = (input: unknown, keys: string[]) => isRecord(input)
+    ? Object.fromEntries(keys.map((key) => [key, text(input[key])])) : input ?? undefined;
+  return {
+    ...value,
+    name: text(value.name) ?? "", address: text(value.address) ?? "", access: text(value.access) ?? "",
+    open: text(value.open), close: text(value.close), capacity: value.capacity ?? undefined,
+    urls: group(value.urls, ["pc"]), genre: group(value.genre, ["name", "catch"]),
+    budget: group(value.budget, ["name", "average"]),
+    photo: isRecord(value.photo) ? { pc: group(value.photo.pc, ["l", "m", "s"]) } : value.photo ?? undefined,
+  };
 }
