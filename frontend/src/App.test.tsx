@@ -1,174 +1,220 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
+import type { Shop } from "./types/shop";
 
-const { observeResults } = vi.hoisted(() => ({ observeResults: vi.fn() }));
-vi.mock("./pages/ResultsPage", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./pages/ResultsPage")>();
-  return { ResultsPage: (props: Parameters<typeof original.ResultsPage>[0]) => {
-    observeResults(props.coordinates);
-    return original.ResultsPage(props);
-  } };
-});
-
+const shops: Shop[] = Array.from({ length: 25 }, (_, i) => ({
+  id: `J${String(i + 1).padStart(9, "0")}`, name: `実店舗${i + 1}`, address: "東京都千代田区", access: "駅から徒歩5分",
+  lat: 35.68, lng: 139.76, photo: { pc: { l: "https://example.com/photo.jpg" } },
+  genre: { name: "和食", catch: "旬の料理" }, budget: { name: "3000円", average: "3500円" },
+  open: "11:00〜22:00", close: "月曜", capacity: 30, urls: { pc: "https://www.hotpepper.jp/strJ000000001/" },
+}));
+function json(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status }); }
+function responseFor(path: string) {
+  const url = new URL(path, "http://localhost");
+  if (url.pathname !== "/api/shops") return json({ data: shops.find((s) => url.pathname.endsWith(s.id)) }, 200);
+  const start = Number(url.searchParams.get("start"));
+  const count = Number(url.searchParams.get("count"));
+  const selected = shops.slice(start - 1, start - 1 + count);
+  return json({ data: { shops: selected, pagination: { total: shops.length, returned: selected.length, start, count } } });
+}
 let success: PositionCallback;
 const getCurrentPosition = vi.fn((ok: PositionCallback) => { success = ok; });
+const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => responseFor(String(input)));
 beforeEach(() => {
   window.history.replaceState({}, "", "/");
   vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("fetch", fetchMock);
   Object.defineProperty(navigator, "geolocation", { configurable: true, value: { getCurrentPosition } });
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   getCurrentPosition.mockClear();
+  fetchMock.mockClear();
+  fetchMock.mockImplementation(async (input) => responseFor(String(input)));
 });
-it("requires two steps, uses the latest range, and preserves coordinates across results operations", async () => {
-  const user = userEvent.setup();
-  render(<App />);
-  const search = screen.getByRole("button", { name: "この条件でお店を探す" }) as HTMLButtonElement;
-  expect(search.disabled).toBe(true);
-  expect(screen.queryByRole("button", { name: "サンプルを見る" })).toBeNull();
-  expect(screen.queryByRole("link", { name: "サンプルを見る" })).toBeNull();
-  screen.getByRole("button", { name: "現在地を取得" }).focus();
-  await user.keyboard("{Enter}");
-  expect((screen.getByRole("button", { name: "現在地を取得中…" }) as HTMLButtonElement).disabled).toBe(true);
-  await user.click(screen.getByRole("radio", { name: "500m" }));
-  act(() => success({ coords: { latitude: 35.681234, longitude: 139.761234 } } as GeolocationPosition));
-  expect(screen.getByText("現在地を取得しました")).toBeTruthy();
-  expect(window.location.pathname).toBe("/");
-  await user.click(search);
-  expect(window.location.search).toBe("?range=2&page=1");
-  expect(screen.getByText("現在地取得済み · 検索範囲：500m 以内")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: /検索範囲を変更/ }));
-  await user.click(screen.getByRole("radio", { name: "2km" }));
-  await user.click(screen.getByRole("button", { name: "この範囲で表示" }));
-  expect(screen.getByText("現在地取得済み · 検索範囲：2km 以内")).toBeTruthy();
-  const page2 = screen.getByRole("button", { name: "2ページ目" });
-  await user.click(page2);
-  expect(window.location.search).toBe("?range=4&page=2");
-  await user.click(screen.getAllByRole("button", { name: /の詳細を見る/ })[0]);
-  await user.click(screen.getByRole("button", { name: "検索結果に戻る" }));
-  expect(screen.getByText("現在地取得済み · 検索範囲：2km 以内")).toBeTruthy();
-  expect(window.location.search).toBe("?range=4&page=2");
-  expect(window.location.href).not.toContain("35.681234");
-  expect(localStorage.length).toBe(0);
-  expect(sessionStorage.length).toBe(0);
-  expect(observeResults).toHaveBeenLastCalledWith({ latitude: 35.681234, longitude: 139.761234 });
-});
-it("ignores late callbacks after navigating home during acquisition", async () => {
-  const user = userEvent.setup();
-  render(<App />);
-  await user.click(screen.getByRole("button", { name: "現在地を取得" }));
-  await user.click(screen.getByRole("link", { name: "nearby-eats ホーム" }));
-  act(() => success({ coords: { latitude: 35, longitude: 139 } } as GeolocationPosition));
-  expect((screen.getByRole("button", { name: "この条件でお店を探す" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByText("現在地を取得しました")).toBeNull();
-  expect(getCurrentPosition).toHaveBeenCalledTimes(1);
-});
-it.each(["/search?range=2&page=1", "/shop/demo-cafe-mori?range=2&page=1"])("renders direct route %s without acquiring location", (path) => {
-  window.history.replaceState({}, "", path);
-  render(<App />);
-  expect(screen.getByRole("main")).toBeTruthy();
-  if (path.startsWith("/search")) expect(screen.getByText(/検索範囲：/)).toBeTruthy();
-  else expect(screen.getByRole("heading", { level: 1, name: "喫茶とごはん 森の時計" })).toBeTruthy();
-  expect(getCurrentPosition).not.toHaveBeenCalled();
-});
-
-it("returns to demo results after a reload clears App memory", () => {
-  const first = render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "現在地を取得" }));
-  act(() => success({ coords: { latitude: 35, longitude: 139 } } as GeolocationPosition));
-  fireEvent.click(screen.getByRole("button", { name: "この条件でお店を探す" }));
-  first.unmount();
-  render(<App />);
-  expect(screen.getByText(/検索範囲：/)).toBeTruthy();
-  expect(screen.getAllByRole("button", { name: /の詳細を見る/ }).length).toBeGreaterThan(0);
-});
-
-// Use real asynchronous history traversal, not a synthetic popstate alone.
-async function traverse(direction: "back" | "forward") {
-  await act(async () => {
-    await new Promise<void>((resolve) => {
-      window.addEventListener("popstate", () => resolve(), { once: true });
-      window.history[direction]();
-    });
-  });
-}
-
-function acquireAndSearch(latitude: number, longitude: number) {
+function acquireAndSearch(latitude = 35.681234, longitude = 139.761234) {
   fireEvent.click(screen.getByRole("button", { name: "現在地を取得" }));
   act(() => success({ coords: { latitude, longitude } } as GeolocationPosition));
   fireEvent.click(screen.getByRole("button", { name: "この条件でお店を探す" }));
 }
-
-it("restores direct demo history and a location session through back and forward", async () => {
-  window.history.replaceState({}, "", "/search?range=2&page=1");
-  render(<App />);
-  expect(observeResults).toHaveBeenLastCalledWith(null);
-  fireEvent.click(screen.getByRole("link", { name: "ホームへ戻る" }));
-  acquireAndSearch(35, 139);
-  const locationSession = window.history.state.searchSessionId;
-  expect(Object.keys(window.history.state)).toEqual(["searchSessionId"]);
-  await traverse("back");
-  await traverse("back");
-  expect(window.location.search).toBe("?range=2&page=1");
-  expect(observeResults).toHaveBeenLastCalledWith(null);
-  await traverse("forward");
-  await traverse("forward");
-  expect(window.history.state.searchSessionId).toBe(locationSession);
-  expect(observeResults).toHaveBeenLastCalledWith({ latitude: 35, longitude: 139 });
-});
-
-it("restores distinct coordinates and ranges for multiple searches", async () => {
-  render(<App />);
-  acquireAndSearch(35, 139);
-  fireEvent.click(screen.getByRole("link", { name: "ホームへ戻る" }));
-  fireEvent.click(screen.getByRole("radio", { name: "500m" }));
-  acquireAndSearch(34, 135);
-  expect(observeResults).toHaveBeenLastCalledWith({ latitude: 34, longitude: 135 });
-  await traverse("back");
-  await traverse("back");
-  expect(window.location.search).toBe("?range=3&page=1");
-  expect(observeResults).toHaveBeenLastCalledWith({ latitude: 35, longitude: 139 });
-  await traverse("forward");
-  await traverse("forward");
-  expect(window.location.search).toBe("?range=2&page=1");
-  expect(observeResults).toHaveBeenLastCalledWith({ latitude: 34, longitude: 135 });
-});
-
-it("evicts old location sessions and falls back to demo", async () => {
-  render(<App />);
-  acquireAndSearch(35, 139);
-  for (let i = 0; i < 20; i += 1) {
-    fireEvent.click(screen.getByRole("link", { name: "ホームへ戻る" }));
-    fireEvent.click(screen.getByRole("button", { name: "この条件でお店を探す" }));
-  }
+async function traverse(direction: "back" | "forward", distance?: number) {
   await act(async () => {
     await new Promise<void>((resolve) => {
       window.addEventListener("popstate", () => resolve(), { once: true });
-      window.history.go(-40);
+      if (distance !== undefined) window.history.go(distance); else window.history[direction]();
     });
   });
-  expect(window.location.pathname).toBe("/search");
-  expect(observeResults).toHaveBeenLastCalledWith(null);
-});
-
-it.each(["%", "%E0%A4%A", "%FF"])("handles malformed encoded shop ID %s", (id) => {
-  window.history.replaceState({}, "", `/shop/${id}?range=2&page=2`);
+}
+function lastSearch() {
+  const call = fetchMock.mock.calls.filter(([path]) => String(path).startsWith("/api/shops?" )).slice(-1)[0]!;
+  return new URL(String(call[0]), "http://localhost").searchParams;
+}
+it("requires two steps and sends coordinates, range and API pagination; displays actual details", async () => {
+  const user = userEvent.setup();
   render(<App />);
-  expect(screen.getByText("お店が見つかりませんでした。")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "検索結果へ戻る" }));
+  const search = screen.getByRole("button", { name: "この条件でお店を探す" }) as HTMLButtonElement;
+  expect(search.disabled).toBe(true);
+  expect(fetchMock).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "現在地を取得" }));
+  await user.click(screen.getByRole("radio", { name: "500m" }));
+  act(() => success({ coords: { latitude: 35.68, longitude: 139.76 } } as GeolocationPosition));
+  expect(window.location.pathname).toBe("/");
+  expect(fetchMock).not.toHaveBeenCalled();
+  await user.click(search);
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("lat")).toBe("35.68");
+  expect(lastSearch().get("lng")).toBe("139.76");
+  expect(lastSearch().get("range")).toBe("2");
+  expect(screen.getByText("25件のお店を表示しています")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "2ページ目" }));
+  await screen.findByText("実店舗13");
+  expect(lastSearch().get("start")).toBe("13");
+  expect(lastSearch().get("count")).toBe("12");
+  await user.click(screen.getByRole("button", { name: "実店舗13の詳細を見る" }));
+  await screen.findByRole("heading", { level: 1, name: "実店舗13" });
+  expect(screen.getByText("11:00〜22:00")).toBeTruthy();
+  expect(screen.getByText("30席")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "検索結果に戻る" }));
+  await screen.findByText("実店舗13");
   expect(window.location.search).toBe("?range=2&page=2");
-  expect(observeResults).toHaveBeenLastCalledWith(null);
+  await user.click(screen.getByRole("button", { name: /検索範囲を変更/ }));
+  await user.click(screen.getByRole("radio", { name: "2km" }));
+  await user.click(screen.getByRole("button", { name: "この範囲で表示" }));
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("range")).toBe("4");
+  expect(lastSearch().get("start")).toBe("1");
+  expect(Object.keys(window.history.state)).toEqual(["searchSessionId"]);
+  expect(window.location.href).not.toContain("35.68");
+  expect(localStorage.length).toBe(0);
+  expect(sessionStorage.length).toBe(0);
+});
+it("ignores late geolocation callbacks after navigation", () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "現在地を取得" }));
+  fireEvent.click(screen.getByRole("link", { name: "nearby-eats ホーム" }));
+  act(() => success({ coords: { latitude: 35, longitude: 139 } } as GeolocationPosition));
+  expect((screen.getByRole("button", { name: "この条件でお店を探す" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it("restores distinct coordinates and ranges through real back and forward", async () => {
+  render(<App />);
+  acquireAndSearch(35, 139);
+  await screen.findByText("実店舗1");
+  fireEvent.click(screen.getByRole("link", { name: "ホームへ戻る" }));
+  fireEvent.click(screen.getByRole("radio", { name: "500m" }));
+  acquireAndSearch(34, 135);
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("lat")).toBe("34");
+  await traverse("back"); await traverse("back");
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("lat")).toBe("35");
+  expect(lastSearch().get("range")).toBe("3");
+  await traverse("forward"); await traverse("forward");
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("lat")).toBe("34");
+  expect(lastSearch().get("range")).toBe("2");
+});
+it("requires a fresh location on reload without sending a request", async () => {
+  const first = render(<App />); acquireAndSearch();
+  await screen.findByText("実店舗1");
+  first.unmount(); fetchMock.mockClear();
+  render(<App />);
+  expect(screen.getByText("現在地を取得してお店を探してください。")).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(screen.queryByText("実店舗1")).toBeNull();
+});
+it("direct search does not acquire location or show samples", () => {
+  window.history.replaceState({}, "", "/search?range=2&page=1&demo=success");
+  render(<App />);
+  expect(screen.getByRole("button", { name: "現在地を取得する" })).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled(); expect(getCurrentPosition).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /の詳細を見る/ })).toBeNull();
+});
+it("loads detail by ID on a direct link and after reload", async () => {
+  window.history.replaceState({}, "", "/shop/J000000001");
+  const first = render(<App />);
+  await screen.findByRole("heading", { name: "実店舗1" });
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/shops/J000000001");
+  first.unmount(); render(<App />);
+  await screen.findByRole("heading", { name: "実店舗1" });
+  expect(getCurrentPosition).not.toHaveBeenCalled();
+});
+it.each(["%", "%E0%A4%A", "%FF", "demo-cafe-mori"])("rejects invalid detail ID %s without fetching", (id) => {
+  window.history.replaceState({}, "", `/shop/${id}`); render(<App />);
+  expect(screen.getByText("お店が見つかりませんでした。")).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it("shows empty results from the API", async () => {
+  fetchMock.mockImplementation(async () => json({ data: { shops: [], pagination: { total: 0, returned: 0, start: 1, count: 12 } } }));
+  render(<App />); acquireAndSearch();
+  await screen.findByRole("heading", { name: "お店が見つかりませんでした" });
+  expect(screen.queryByRole("button", { name: /の詳細を見る/ })).toBeNull();
+});
+it.each([503, 504])("shows API error %s without samples and retries the same search", async (status) => {
+  fetchMock.mockResolvedValueOnce(json({ error: { message: "server private details" } }, status));
+  render(<App />); acquireAndSearch();
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: /の詳細を見る/ })).toBeNull();
+  expect(document.body.textContent).not.toContain("server private details");
+  fireEvent.click(screen.getByRole("button", { name: "再読み込み" }));
+  await screen.findByText("実店舗1");
+  expect(lastSearch().get("lat")).toBe("35.681234");
+});
+it("aborts stale searches and ignores late results after a range change", async () => {
+  let resolveOld!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOld = resolve; }));
+  render(<App />); acquireAndSearch();
+  expect(screen.getByRole("status", { name: "お店を読み込み中" })).toBeTruthy();
+  const signal = fetchMock.mock.calls[0][1]?.signal;
+  fireEvent.click(screen.getByRole("button", { name: /検索範囲を変更/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "500m" }));
+  fireEvent.click(screen.getByRole("button", { name: "この範囲で表示" }));
+  await screen.findByText("実店舗1");
+  expect(signal?.aborted).toBe(true);
+  await act(async () => resolveOld(json({ data: { shops: [], pagination: { total: 0, returned: 0, start: 1, count: 12 } } })));
+  expect(screen.getByText("実店舗1")).toBeTruthy();
+});
+it("handles detail not found and retryable errors separately", async () => {
+  window.history.replaceState({}, "", "/shop/J000000001");
+  fetchMock.mockResolvedValueOnce(json({}, 503)); render(<App />);
+  await screen.findByRole("alert");
+  fetchMock.mockResolvedValueOnce(json({}, 404));
+  fireEvent.click(screen.getByRole("button", { name: "再読み込み" }));
+  await screen.findByText("お店が見つかりませんでした。");
+});
+it("never displays old shops when the next page fails", async () => {
+  render(<App />); acquireAndSearch(); await screen.findByText("実店舗1");
+  fetchMock.mockRejectedValueOnce(new TypeError("offline"));
+  fireEvent.click(screen.getByRole("button", { name: "2ページ目" }));
+  await screen.findByRole("alert");
+  expect(screen.queryByText("実店舗1")).toBeNull();
+});
+it("bounds retained sessions and asks for location for evicted history", async () => {
+  render(<App />); acquireAndSearch(); await screen.findByText("実店舗1");
+  for (let i = 0; i < 20; i += 1) {
+    fireEvent.click(screen.getByRole("link", { name: "ホームへ戻る" }));
+    fireEvent.click(screen.getByRole("button", { name: "この条件でお店を探す" }));
+    await screen.findByText("実店舗1");
+  }
+  await traverse("back", -40);
+  expect(screen.getByText("現在地を取得してお店を探してください。")).toBeTruthy();
+});
+it("keeps development labels and fabricated review scores out of the UI", async () => {
+  render(<App />); acquireAndSearch(); await screen.findByText("実店舗1");
+  expect(document.body.textContent).not.toMatch(/デモ|サンプル|今後追加予定|開発用|検証用/);
+  expect(document.querySelector("svg.lucide-star")).toBeNull();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 });
 
-it.each(["/", "/search?range=2&page=1", "/search?demo=empty", "/search?demo=error", "/shop/demo-cafe-mori"])("keeps development labels out of the UI at %s", (path) => {
-  window.history.replaceState({}, "", path);
-  render(<App />);
-  expect(document.body.textContent).not.toMatch(/デモ|サンプル|今後追加予定|開発用|検証用/);
-  for (const image of screen.queryAllByRole("img")) {
-    expect(image.getAttribute("alt")).not.toMatch(/デモ|サンプル/);
-  }
-  if (path.startsWith("/search")) {
-    expect(screen.getByRole("heading", { level: 1, name: "お店一覧" })).toBeTruthy();
-  }
+it("retries empty results and re-submits an unchanged range", async () => {
+  fetchMock.mockResolvedValueOnce(json({ data: { shops: [], pagination: { total: 0, returned: 0, start: 1, count: 12 } } }));
+  render(<App />); acquireAndSearch();
+  await screen.findByRole("heading", { name: "お店が見つかりませんでした" });
+  fireEvent.click(screen.getByRole("button", { name: "もう一度検索" }));
+  await screen.findByText("実店舗1");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: /検索範囲を変更/ }));
+  fireEvent.click(screen.getByRole("button", { name: "この範囲で表示" }));
+  await screen.findByText("実店舗1");
+  expect(fetchMock).toHaveBeenCalledTimes(3);
 });

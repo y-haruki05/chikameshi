@@ -1,15 +1,16 @@
+import { safeHttpUrl } from "../services/safeUrl";
 import { useState } from "react";
 import { UtensilsCrossed } from "lucide-react";
-import type { DemoShop } from "../types/demoShop";
+import type { Shop } from "../types/shop";
 
 interface ShopImageProps {
-  shop: DemoShop;
+  shop: Shop;
   className?: string;
   sizes?: string;
 }
 
 export function ShopImage({ shop, className = "", sizes }: ShopImageProps) {
-  const imageUrls = [shop.photo?.pc?.l, shop.photo?.pc?.m, shop.photo?.pc?.s]
+  const imageUrls = [shop.photo?.pc?.l, shop.photo?.pc?.m, shop.photo?.pc?.s].map(safeHttpUrl)
     .filter((url): url is string => typeof url === "string" && url.trim().length > 0)
     .filter((url, index, urls) => urls.indexOf(url) === index);
   const imageKey = imageUrls.join("|");

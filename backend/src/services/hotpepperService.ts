@@ -41,7 +41,20 @@ function parseShop(value: unknown): HotPepperShop {
     throw new HotPepperServiceError("HotPepper API returned an invalid shop record.");
   }
 
-  return value as unknown as HotPepperShop;
+  const strings = (input: unknown, keys: string[]) => {
+    if (!isRecord(input)) return undefined;
+    return Object.fromEntries(keys.flatMap((key) => typeof input[key] === "string" ? [[key, input[key]]] : []));
+  };
+  return {
+    id: value.id, name: value.name, address: value.address, access: value.access, lat: value.lat, lng: value.lng,
+    ...(typeof value.open === "string" ? { open: value.open } : {}),
+    ...(typeof value.close === "string" ? { close: value.close } : {}),
+    ...(typeof value.capacity === "number" && Number.isSafeInteger(value.capacity) && value.capacity >= 0 ? { capacity: value.capacity } : {}),
+    ...(isRecord(value.urls) ? { urls: strings(value.urls, ["pc"]) } : {}),
+    ...(isRecord(value.genre) ? { genre: strings(value.genre, ["name", "catch"]) } : {}),
+    ...(isRecord(value.budget) ? { budget: strings(value.budget, ["name", "average"]) } : {}),
+    ...(isRecord(value.photo) ? { photo: { pc: strings(value.photo.pc, ["l", "m", "s"]) } } : {}),
+  };
 }
 
 function parseApiError(value: unknown): HotPepperApiError {
@@ -76,8 +89,8 @@ function parseResults(payload: unknown): HotPepperResults {
     };
   }
 
-  if (!isFiniteNumber(results.results_available)
-    || !isFiniteNumber(results.results_start)) {
+  if (!isFiniteNumber(results.results_available) || !Number.isSafeInteger(results.results_available) || results.results_available < 0
+    || !isFiniteNumber(results.results_start) || !Number.isSafeInteger(results.results_start) || results.results_start < 1) {
     throw new HotPepperServiceError("HotPepper API returned invalid pagination metadata.");
   }
   const resultsReturned = parseResultsReturned(results.results_returned);
@@ -98,7 +111,16 @@ function parseResults(payload: unknown): HotPepperResults {
   };
 }
 
-export async function searchShops(query: ShopSearchQuery): Promise<ShopSearchResponse> {
+export function searchShops(query: ShopSearchQuery): Promise<ShopSearchResponse> {
+  return requestShops({ lat: String(query.lat), lng: String(query.lng), range: String(query.range), start: String(query.start), count: String(query.count) }, query.count);
+}
+
+export async function getShopById(id: string): Promise<HotPepperShop | null> {
+  const result = await requestShops({ id, count: "1", start: "1" }, 1);
+  return result.shops.find((shop) => shop.id === id) ?? null;
+}
+
+async function requestShops(params: Record<string, string>, count: number): Promise<ShopSearchResponse> {
   const apiKey = process.env.HOTPEPPER_API_KEY?.trim();
   if (!apiKey) {
     throw new HotPepperServiceError(
@@ -111,13 +133,8 @@ export async function searchShops(query: ShopSearchQuery): Promise<ShopSearchRes
   const url = new URL(API_URL);
   url.search = new URLSearchParams({
     key: apiKey,
-    lat: String(query.lat),
-    lng: String(query.lng),
-    range: String(query.range),
-    start: String(query.start),
-    count: String(query.count),
+    ...params,
     format: "json",
-    type: "lite",
   }).toString();
 
   const configuredTimeout = Number(process.env.HOTPEPPER_API_TIMEOUT_MS ?? 5000);
@@ -162,7 +179,7 @@ export async function searchShops(query: ShopSearchQuery): Promise<ShopSearchRes
       const safeCode = Number.isFinite(code) ? code : 502;
       const statusCode = safeCode === 1000 || safeCode === 2000 ? 502 : safeCode === 3000 ? 400 : 502;
       throw new HotPepperServiceError(
-        `HotPepper API error (${safeCode}): ${apiError?.message ?? "Unknown API error"}`,
+        `HotPepper API error (${safeCode}).`,
         statusCode,
         `HOTPEPPER_API_${safeCode}`,
       );
@@ -180,7 +197,7 @@ export async function searchShops(query: ShopSearchQuery): Promise<ShopSearchRes
         total: results.results_available,
         returned: results.results_returned,
         start: results.results_start,
-        count: query.count,
+        count,
       },
     };
   } catch (error) {

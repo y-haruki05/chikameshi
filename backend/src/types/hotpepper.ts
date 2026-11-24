@@ -14,6 +14,7 @@ export interface HotPepperShop {
   lng: number;
   urls?: { pc?: string };
   photo?: ShopPhoto;
+  capacity?: number;
   open?: string;
   close?: string;
   genre?: { name?: string; catch?: string };

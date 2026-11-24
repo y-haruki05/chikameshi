@@ -4,7 +4,7 @@ import { SiteHeader } from "./components/SiteHeader";
 import { DetailPage } from "./pages/DetailPage";
 import { HomePage } from "./pages/HomePage";
 import { ResultsPage } from "./pages/ResultsPage";
-import type { DemoView, SearchRange } from "./types/demo";
+import type { SearchRange } from "./types/demo";
 import { isSearchRange } from "./types/demo";
 
 import { useGeolocation } from "./hooks/useGeolocation";
@@ -12,7 +12,7 @@ import type { Coordinates } from "./hooks/useGeolocation";
 
 type Route =
   | { name: "home" }
-  | { name: "results"; range: SearchRange; page: number; demoView: DemoView }
+  | { name: "results"; range: SearchRange; page: number }
   | { name: "detail"; shopId: string; range: SearchRange; page: number };
 
 function getRoute(): Route {
@@ -20,14 +20,10 @@ function getRoute(): Route {
   const rangeValue = Number(url.searchParams.get("range"));
   const range = isSearchRange(rangeValue) ? rangeValue : 3;
   const pageValue = Number(url.searchParams.get("page"));
-  const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1;
+  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1;
 
   if (url.pathname === "/search") {
-    const demoValue = url.searchParams.get("demo");
-    const demoView: DemoView = demoValue === "empty" || demoValue === "error" || demoValue === "loading"
-      ? demoValue
-      : "success";
-    return { name: "results", range, page, demoView };
+    return { name: "results", range, page };
   }
 
   const detailMatch = url.pathname.match(/^\/shop\/([^/]+)$/);
@@ -50,8 +46,8 @@ function getSessionId(): string | null {
 
 export default function App() {
   const geolocation = useGeolocation();
-  // Coordinates never leave this App instance. Evicted/reloaded histories become demos.
-  const sessions = useRef(new Map<string, Coordinates | null>());
+  // Keep coordinates in memory, never in the page URL or history state.
+  const sessions = useRef(new Map<string, Coordinates>());
   const [sessionId, setSessionId] = useState<string | null>(getSessionId);
   const searchCoordinates = sessionId ? sessions.current.get(sessionId) ?? null : null;
   const [route, setRoute] = useState<Route>(getRoute);
@@ -76,10 +72,10 @@ export default function App() {
   };
 
   const startSearch = (coordinates: Coordinates | null) => {
-    // getRandomValues also works on HTTP, where demo browsing remains available.
+    if (!coordinates) return;
     const id = Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16)).join("-");
     sessions.current.set(id, coordinates);
-    // Bound retained location history; older entries safely fall back to demo mode.
+    // Bound retained location history; older entries require a fresh location.
     if (sessions.current.size > 20) {
       const oldest = sessions.current.keys().next().value;
       if (oldest !== undefined) sessions.current.delete(oldest);
@@ -94,7 +90,6 @@ export default function App() {
         coordinates={searchCoordinates}
         range={route.range}
         page={route.page}
-        demoView={route.demoView}
         onSearch={(range) => navigate(`/search?range=${range}&page=1`, sessionId)}
         onPageChange={(page) => navigate(`/search?range=${route.range}&page=${page}`, sessionId)}
         onSelectShop={(shopId) => navigate(`/shop/${encodeURIComponent(shopId)}?range=${route.range}&page=${route.page}`, sessionId)}

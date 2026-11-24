@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { searchShops } from "./hotpepperService.js";
+import { getShopById, searchShops } from "./hotpepperService.js";
 import { HotPepperServiceError } from "../types/hotpepper.js";
 import type { ShopSearchQuery } from "../types/hotpepper.js";
 
@@ -54,7 +54,7 @@ test("maps a successful search and pagination metadata", async () => {
     assert.equal(url.searchParams.get("start"), "1");
     assert.equal(url.searchParams.get("count"), "10");
     assert.equal(url.searchParams.get("format"), "json");
-    assert.equal(url.searchParams.get("type"), "lite");
+    assert.equal(url.searchParams.has("type"), false);
     return jsonResponse({ results: { ...results, shop: [shop] } });
   });
   const response = await searchShops(query);
@@ -161,4 +161,26 @@ test("times out while reading the response body", async () => {
   } as Response));
   await assert.rejects(searchShops(query), (error: unknown) =>
     error instanceof HotPepperServiceError && error.statusCode === 504 && error.code === "HOTPEPPER_TIMEOUT");
+});
+
+test("loads full detail by ID without sending location and returns actual fields", async () => {
+  mockFetch(async (input) => {
+    const url = new URL(String(input));
+    assert.equal(url.searchParams.get("id"), shop.id);
+    assert.equal(url.searchParams.has("lat"), false);
+    assert.equal(url.searchParams.has("type"), false);
+    return jsonResponse({ results: { ...results, shop: { ...shop, open: "11:00-22:00", capacity: 30, extra: "not exposed" } } });
+  });
+  const detail = await getShopById(shop.id);
+  assert.equal(detail?.open, "11:00-22:00");
+  assert.equal(detail?.capacity, 30);
+  assert.equal("extra" in detail!, false);
+});
+test("returns null when the detail API finds no matching shop", async () => {
+  mockFetch(async () => jsonResponse({ results: { ...results, results_available: 0, results_returned: 0 } }));
+  assert.equal(await getShopById(shop.id), null);
+});
+test("does not echo upstream error text containing credentials", async () => {
+  mockFetch(async () => jsonResponse({ results: { api_version: "1.20", error: { code: 1000, message: "key=test-key" } } }));
+  await assert.rejects(searchShops(query), (error: unknown) => error instanceof HotPepperServiceError && !error.message.includes("test-key"));
 });
