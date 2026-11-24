@@ -1,4 +1,4 @@
-# nearby-eats
+# ちかめし（chikameshi）
 
 HotPepper グルメサーチAPIを使って、現在地付近の飲食店を探すWebアプリです。ブラウザで取得した現在地と検索範囲を使い、店舗一覧・詳細を表示します。
 
@@ -11,7 +11,7 @@ HotPepper グルメサーチAPIを使って、現在地付近の飲食店を探�
 ## ディレクトリ構成
 
 ```text
-nearby-eats/
+chikameshi/
 ├── backend/src/
 │   ├── routes/shops.ts
 │   ├── services/hotpepperService.ts
@@ -95,8 +95,8 @@ curl 'http://localhost:3001/api/shops?lat=35.66&lng=139.70&range=3&start=1&count
 ```sh
 npm run typecheck
 npm run build
-npm test --workspace @nearby-eats/frontend
-npm test --workspace @nearby-eats/backend
+npm test --workspace @chikameshi/frontend
+npm test --workspace @chikameshi/backend
 npm audit
 git diff --check
 git check-ignore .env
