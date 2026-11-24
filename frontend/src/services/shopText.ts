@@ -1,0 +1,3 @@
+export function shopText(value: string | null | undefined, fallback = ""): string {
+  return value?.trim() || fallback;
+}

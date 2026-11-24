@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SiteFooter } from "./components/SiteFooter";
 import { SiteHeader } from "./components/SiteHeader";
 import { DetailPage } from "./pages/DetailPage";
@@ -9,6 +9,10 @@ import { isSearchRange } from "./types/demo";
 
 import { useGeolocation } from "./hooks/useGeolocation";
 import type { Coordinates } from "./hooks/useGeolocation";
+
+function createEntryKey() {
+  return Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16)).join("-");
+}
 
 type Route =
   | { name: "home" }
@@ -51,21 +55,52 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(getSessionId);
   const searchCoordinates = sessionId ? sessions.current.get(sessionId) ?? null : null;
   const [route, setRoute] = useState<Route>(getRoute);
+  const entryKey = useRef("");
+  if (!entryKey.current) entryKey.current = createEntryKey();
+  const scrollPositions = useRef(new Map<string, number>());
+  const pendingScroll = useRef<number | null>(null);
   const [selectedRange, setSelectedRange] = useState<SearchRange>(3);
 
   useEffect(() => {
-    const updateRoute = () => { geolocation.cancel(); setRoute(getRoute()); setSessionId(getSessionId()); };
+    const previousRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    window.history.replaceState({ ...window.history.state, entryKey: entryKey.current }, "");
+    const updateRoute = () => {
+      if (pendingScroll.current === null) scrollPositions.current.set(entryKey.current, window.scrollY);
+      entryKey.current = window.history.state?.entryKey ?? createEntryKey();
+      pendingScroll.current = scrollPositions.current.get(entryKey.current) ?? 0;
+      geolocation.cancel();
+      setRoute(getRoute());
+      setSessionId(getSessionId());
+    };
     window.addEventListener("popstate", updateRoute);
-    return () => window.removeEventListener("popstate", updateRoute);
+    return () => {
+      window.removeEventListener("popstate", updateRoute);
+      window.history.scrollRestoration = previousRestoration;
+    };
   }, []);
+
+  // Restore only once the destination has enough content to scroll.
+  const restoreScroll = useCallback(() => {
+    if (pendingScroll.current === null) return;
+    window.scrollTo({ top: pendingScroll.current, behavior: "instant" });
+    pendingScroll.current = null;
+  }, [route]);
+  useLayoutEffect(() => {
+    if (route.name === "home") restoreScroll();
+  }, [route.name, restoreScroll]);
 
   useEffect(() => {
     if (route.name === "results" || route.name === "detail") setSelectedRange(route.range);
   }, [route]);
 
-  const navigate = (href: string, searchSessionId: string | null = null) => {
+  const navigate = (href: string, searchSessionId: string | null = null, fromResults = false) => {
     geolocation.cancel();
-    window.history.pushState(searchSessionId ? { searchSessionId } : {}, "", href);
+    if (pendingScroll.current === null) scrollPositions.current.set(entryKey.current, window.scrollY);
+    const returnEntryKey = fromResults ? entryKey.current : undefined;
+    entryKey.current = createEntryKey();
+    pendingScroll.current = 0;
+    window.history.pushState({ ...(searchSessionId ? { searchSessionId } : {}), entryKey: entryKey.current, ...(returnEntryKey ? { returnEntryKey } : {}) }, "", href);
     setSessionId(searchSessionId);
     setRoute(getRoute());
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -73,7 +108,7 @@ export default function App() {
 
   const startSearch = (coordinates: Coordinates | null) => {
     if (!coordinates) return;
-    const id = Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16)).join("-");
+    const id = createEntryKey();
     sessions.current.set(id, coordinates);
     // Bound retained location history; older entries require a fresh location.
     if (sessions.current.size > 20) {
@@ -87,20 +122,26 @@ export default function App() {
   if (route.name === "results") {
     content = (
       <ResultsPage
+        onReady={restoreScroll}
         coordinates={searchCoordinates}
         range={route.range}
         page={route.page}
         onSearch={(range) => navigate(`/search?range=${range}&page=1`, sessionId)}
         onPageChange={(page) => navigate(`/search?range=${route.range}&page=${page}`, sessionId)}
-        onSelectShop={(shopId) => navigate(`/shop/${encodeURIComponent(shopId)}?range=${route.range}&page=${route.page}`, sessionId)}
+        onSelectShop={(shopId) => navigate(`/shop/${encodeURIComponent(shopId)}?range=${route.range}&page=${route.page}`, sessionId, true)}
         onGoHome={() => navigate("/")}
       />
     );
   } else if (route.name === "detail") {
     content = (
       <DetailPage
+        onReady={restoreScroll}
         shopId={route.shopId}
-        onBack={() => navigate(`/search?range=${route.range}&page=${route.page}`, sessionId)}
+        onBack={() => {
+          const returnKey: unknown = window.history.state?.returnEntryKey;
+          if (typeof returnKey === "string" && scrollPositions.current.has(returnKey)) window.history.back();
+          else navigate(`/search?range=${route.range}&page=${route.page}`, sessionId);
+        }}
         onGoHome={() => navigate("/")}
       />
     );

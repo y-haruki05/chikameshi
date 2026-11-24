@@ -184,3 +184,13 @@ test("does not echo upstream error text containing credentials", async () => {
   mockFetch(async () => jsonResponse({ results: { api_version: "1.20", error: { code: 1000, message: "key=test-key" } } }));
   await assert.rejects(searchShops(query), (error: unknown) => error instanceof HotPepperServiceError && !error.message.includes("test-key"));
 });
+
+
+test("keeps shops with missing descriptive text available for display", async () => {
+  mockFetch(async () => jsonResponse({ results: { ...results, shop: { id: shop.id, lat: shop.lat, lng: shop.lng, name: null, access: null } } }));
+  const response = await searchShops(query);
+  assert.equal(response.shops.length, 1);
+  assert.equal(response.shops[0]?.name, "");
+  assert.equal(response.shops[0]?.address, "");
+  assert.equal(response.shops[0]?.access, "");
+});

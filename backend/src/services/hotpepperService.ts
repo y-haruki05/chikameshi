@@ -33,9 +33,9 @@ function parseResultsReturned(value: unknown): number {
 function parseShop(value: unknown): HotPepperShop {
   if (!isRecord(value)
     || !isString(value.id)
-    || !isString(value.name)
-    || !isString(value.address)
-    || !isString(value.access)
+    || (value.name != null && !isString(value.name))
+    || (value.address != null && !isString(value.address))
+    || (value.access != null && !isString(value.access))
     || !isFiniteNumber(value.lat)
     || !isFiniteNumber(value.lng)) {
     throw new HotPepperServiceError("HotPepper API returned an invalid shop record.");
@@ -46,7 +46,7 @@ function parseShop(value: unknown): HotPepperShop {
     return Object.fromEntries(keys.flatMap((key) => typeof input[key] === "string" ? [[key, input[key]]] : []));
   };
   return {
-    id: value.id, name: value.name, address: value.address, access: value.access, lat: value.lat, lng: value.lng,
+    id: value.id, name: value.name ?? "", address: value.address ?? "", access: value.access ?? "", lat: value.lat, lng: value.lng,
     ...(typeof value.open === "string" ? { open: value.open } : {}),
     ...(typeof value.close === "string" ? { close: value.close } : {}),
     ...(typeof value.capacity === "number" && Number.isSafeInteger(value.capacity) && value.capacity >= 0 ? { capacity: value.capacity } : {}),
