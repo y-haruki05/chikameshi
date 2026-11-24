@@ -93,7 +93,7 @@ it("requires two steps and sends coordinates, range and API pagination; displays
 it("ignores late geolocation callbacks after navigation", () => {
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "現在地を取得" }));
-  fireEvent.click(screen.getByRole("link", { name: "nearby-eats ホーム" }));
+  fireEvent.click(screen.getByRole("link", { name: "ちかめし ホーム" }));
   act(() => success({ coords: { latitude: 35, longitude: 139 } } as GeolocationPosition));
   expect((screen.getByRole("button", { name: "この条件でお店を探す" }) as HTMLButtonElement).disabled).toBe(true);
   expect(fetchMock).not.toHaveBeenCalled();

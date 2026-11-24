@@ -12,12 +12,12 @@ export function SiteHeader({ onNavigate }: SiteHeaderProps) {
           href="/"
           onClick={(event) => { event.preventDefault(); onNavigate("/"); }}
           className="group inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c75d3e]"
-          aria-label="nearby-eats ホーム"
+          aria-label="ちかめし ホーム"
         >
           <span className="flex size-9 items-center justify-center rounded-xl bg-[#c75d3e] text-white shadow-sm transition group-hover:-rotate-3">
             <UtensilsCrossed size={18} strokeWidth={2.2} aria-hidden="true" />
           </span>
-          <span className="text-[17px] font-bold tracking-[-0.055em] text-[#27342c]">nearby<span className="text-[#c75d3e]">-</span>eats</span>
+          <span className="text-[17px] font-bold tracking-[-0.055em] text-[#27342c]">ちか<span className="text-[#c75d3e]">めし</span></span>
         </a>
 
         <nav aria-label="メインナビゲーション" className="flex items-center gap-2 sm:gap-5">

@@ -1,5 +1,5 @@
 {
-  "name": "@nearby-eats/backend",
+  "name": "@chikameshi/backend",
   "private": true,
   "type": "module",
   "scripts": {

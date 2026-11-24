@@ -1,5 +1,5 @@
 {
-  "name": "nearby-eats",
+  "name": "chikameshi",
   "private": true,
   "workspaces": ["frontend", "backend"],
   "scripts": {
