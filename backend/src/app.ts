@@ -23,7 +23,7 @@ export function createApp() {
       return;
     }
 
-    // Do not log request URLs or upstream errors, which could contain credentials.
+    // URLには座標や上流APIキーが含まれ得るため、要求URLや例外の全文は記録しない。
     console.error("Unexpected API error.");
     response.status(500).json({
       error: { code: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred." },

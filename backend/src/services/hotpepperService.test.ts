@@ -80,7 +80,7 @@ test("accepts shop as a single object", async () => {
 });
 
 test("accepts shop as an array", async () => {
-  mockFetch(async () => jsonResponse({ results: { ...results, shop: [shop, { ...shop, id: "J000000002" }] } }));
+  mockFetch(async () => jsonResponse({ results: { ...results, results_available: 2, results_returned: 2, shop: [shop, { ...shop, id: "J000000002" }] } }));
   assert.equal((await searchShops(query)).shops.length, 2);
 });
 
@@ -194,3 +194,17 @@ test("keeps shops with missing descriptive text available for display", async ()
   assert.equal(response.shops[0]?.address, "");
   assert.equal(response.shops[0]?.access, "");
 });
+
+
+for (const [name, payload] of [
+  ["coordinate out of range", { ...results, shop: { ...shop, lat: 91 } }],
+  ["invalid shop identifier", { ...results, shop: { ...shop, id: "invalid" } }],
+  ["returned count mismatch", { ...results, results_returned: 0, shop }],
+  ["incorrect start", { ...results, results_start: 2, shop }],
+  ["duplicate shop IDs", { ...results, results_available: 2, results_returned: 2, shop: [shop, shop] }],
+] as const) {
+  test(`rejects upstream ${name}`, async () => {
+    mockFetch(async () => jsonResponse({ results: payload }));
+    await assert.rejects(searchShops(query), HotPepperServiceError);
+  });
+}

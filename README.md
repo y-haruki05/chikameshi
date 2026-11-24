@@ -1,111 +1,197 @@
 # ちかめし（chikameshi）
 
-HotPepper グルメサーチAPIを使って、現在地付近の飲食店を探すWebアプリです。ブラウザで取得した現在地と検索範囲を使い、店舗一覧・詳細を表示します。
+現在地と検索半径から、近くの飲食店を探すWebアプリです。フェンリルのウェブアプリ選考課題として、外部APIの情報を安全に取得し、検索から詳細確認まで迷わず操作できることを目指しています。
 
-## 使用技術
+## 機能
 
-- Frontend: React 18, TypeScript, Vite, Tailwind CSS 4, Lucide React
-- Backend: Node.js 20+, Express 4, TypeScript, dotenv
-- Runtime API: Node.js組み込みの `fetch`
+- Geolocation APIによる現在地取得と、許可拒否・取得失敗・タイムアウトからの再試行
+- 半径300m・500m・1km・2km・3kmでのHotPepperグルメサーチ
+- 店名・アクセス・画像を含む店舗一覧、12件ずつのページングと表示件数
+- 店名・住所・営業時間・画像などの詳細、地図・HotPepperへの外部リンク
+- 検索範囲の変更、検索0件・ページ範囲外・通信失敗からの復帰
+- ブラウザの戻る・進む、一覧と詳細の往復時のスクロール復元
+- キーボード操作、本文への移動リンク、画面タイトル・フォーカス管理
+
+お気に入り・認証・DBへの保存は実装していません。架空の店舗データへのフォールバックも行いません。
+
+## 技術スタック
+
+`package-lock.json` に固定された主なバージョンです。実際のインストール結果は `npm ls --workspaces --depth=0` で確認できます。
+
+| 用途 | 技術・バージョン |
+| --- | --- |
+| UI | React / React DOM 18.3.1 |
+| 言語 | TypeScript 5.7.3（strict） |
+| 開発・ビルド | Vite 6.4.6 |
+| スタイル | Tailwind CSS 4.3.5、Lucide React 0.468.0 |
+| APIサーバー | Express 4.22.3、dotenv 16.6.1 |
+| フロントテスト | Vitest 4.1.12、Testing Library、jsdom 26.1.0 |
+| バックテスト | Node.js標準テストランナー、tsx 4.23.15 |
+
+Reactで画面状態を管理し、通信・現在地取得は小さなHookに分けています。バックエンドを置くことでAPIキーをブラウザへ渡さず、外部APIのデータ検証とエラー分類を集約しています。追加の状態管理・HTTP通信ライブラリは使用していません。
+
+## システム構成
+
+```mermaid
+flowchart LR
+  User[ブラウザ] -->|明示操作で取得| Geo[Geolocation API]
+  User -->|同一オリジンの /api| Vite[Vite 開発サーバー :5173]
+  Vite -->|開発用プロキシ| Server[Express :3001]
+  Server -->|サーバー側のAPIキー| API[HotPepper グルメサーチAPI]
+```
+
+Reactが画面と検索セッションを管理し、Expressが外部APIへの通信を担当します。DBはありません。上のプロキシは開発用です。本番配信では別途、静的ファイル配信・SPAのパス書き換え・`/api` の接続・HTTPSを設定してください。
 
 ## ディレクトリ構成
 
 ```text
 chikameshi/
-├── backend/src/
-│   ├── routes/shops.ts
-│   ├── services/hotpepperService.ts
-│   ├── types/hotpepper.ts
-│   └── index.ts
+├── .github/workflows/ci.yml      # 型・ビルド・テスト・監査
+├── backend/
+│   ├── scripts/test.mjs          # テストを再帰的に探索して実行
+│   └── src/
+│       ├── app.ts               # Expressアプリと共通エラー処理
+│       ├── index.ts             # .env読込と起動
+│       ├── routes/shops.ts      # 入力検証と検索・詳細のHTTP API
+│       ├── services/            # 上流API通信・検証とテスト
+│       └── types/               # サーバー側の型・エラー定義
 ├── frontend/src/
-│   ├── components/ApiStatus.tsx
-│   ├── hooks/useApiHealth.ts
-│   ├── pages/HomePage.tsx
-│   ├── services/shopApi.ts
-│   ├── types/shop.ts
-│   ├── App.tsx
-│   └── main.tsx
+│   ├── components/              # 共通の表示部品
+│   ├── hooks/                   # 通信状態・現在地・アクセシビリティ
+│   ├── pages/                   # Home / Results / Detail
+│   ├── services/                # HTTP通信・データ検証・表示補助
+│   ├── types/                   # 店舗・検索条件の型
+│   ├── test/setup.ts            # テスト後の後片付け
+│   ├── App.tsx                 # 画面遷移・検索セッション・スクロール
+│   └── main.tsx                # React起動
 ├── .env.example
-├── .gitignore
-└── README.md
+├── .nvmrc
+├── package.json                 # npm workspacesと共通コマンド
+└── package-lock.json
 ```
 
-## 環境変数
+## 開発環境の構築
 
-ルートの `.env.example` を `.env` にコピーし、新しく取得したAPIキーを設定します。
-
-| 変数 | 説明 | 既定値 |
-| --- | --- | --- |
-| `HOTPEPPER_API_KEY` | Recruit Web Servicesで取得したキー | なし（店舗検索APIは503） |
-| `PORT` | バックエンドのポート | `3001` |
-| `HOTPEPPER_API_TIMEOUT_MS` | HotPepper APIのタイムアウト（1000〜30000ms） | `5000` |
-
-`.env` はGit管理対象外です。キーはバックエンドからのみ利用し、フロントエンドに公開しません。
-
-## 環境構築と起動
-
-Node.js 20以上とnpmを用意してください。
+Node.js 22系とnpmを用意してください。`.nvmrc` は22を指定しています。CIには22・24系の検証を設定しています。nvm利用時は `nvm install`、`nvm use` で切り替えられます。
 
 ```sh
+git clone --branch develop https://github.com/y-haruki05/chikameshi.git
+cd chikameshi
+npm ci
 cp .env.example .env
-# .env の HOTPEPPER_API_KEY に新しいキーを設定
-npm install
+```
+
+既に `.env` がある場合はコピーせず、そのファイルを編集してください。
+
+### APIキーの取得と設定
+
+1. [リクルートWEBサービス](https://webservice.recruit.co.jp/)から[APIキー発行登録](https://webservice.recruit.co.jp/register)へ進み、案内に従ってキーを取得します。
+2. プロジェクト直下の `.env` に `HOTPEPPER_API_KEY` を設定します。キーはこのファイルかサーバーの環境変数にのみ設定してください。
+3. `git check-ignore .env` が `.env` を返し、Git管理対象外であることを確認します。
+
+```dotenv
+HOTPEPPER_API_KEY=取得したキーをここに設定
+PORT=3001
+HOTPEPPER_API_TIMEOUT_MS=5000
+```
+
+| 環境変数 | 用途・既定値 |
+| --- | --- |
+| `HOTPEPPER_API_KEY` | 必須。未設定時は店舗APIが503を返す（ヘルスチェックは利用可能） |
+| `PORT` | バックエンドのポート。既定値3001。変更時は `frontend/vite.config.ts` のプロキシ接続先も合わせる |
+| `HOTPEPPER_API_TIMEOUT_MS` | 上流APIのタイムアウト。既定値5000ms、1000〜30000msに制限 |
+
+サーバーに設定した環境変数は `.env` より優先されます。キーの変更後はバックエンドを再起動してください。`VITE_` 付き変数にAPIキーを設定するとブラウザへ公開されるため使用しないでください。
+
+### 起動
+
+プロジェクト直下で実行します。
+
+```sh
 npm run dev
 ```
 
-Viteの画面は `http://localhost:5173`、バックエンドは `http://localhost:3001` で起動します。Vite開発サーバーは `/api` をバックエンドへプロキシします。
+- フロント：`http://localhost:5173`（使用中の場合は起動ログのURLを確認）
+- バック：`http://localhost:3001`
+- 終了：起動したターミナルで `Ctrl+C`
 
-## API仕様
+Homeで検索範囲を選び、「現在地を取得」を押して位置情報を許可した後、「この条件でお店を探す」を押します。LAN内のスマートフォンからHTTPで開いても位置情報取得は使えません。実端末ではHTTPS環境を用意してください。
 
-HotPepperグルメサーチAPIの公式仕様に合わせて、バックエンドが次のリクエストを行います。
-
-- Upstream: `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/`
-- 必須条件: APIキーと検索条件のいずれか。位置検索は `lat` と `lng` の組み合わせで指定
-- `range`: 1=300m、2=500m、3=1000m、4=2000m、5=3000m
-- `start`: 1始まりの取得開始位置
-- `count`: 1〜100件
-- `format=json`（営業時間・席数も取得するため、`type=lite`は指定しません）
-
-アプリ内API:
-
-- `GET /api/health`: バックエンド生存確認。APIキー不要。
-- `GET /api/shops/:id`: 店舗IDで詳細を取得。成功時は `{ data: shop }`、未掲載の場合は404。
-- `GET /api/shops?lat=35.66&lng=139.70&range=3&start=1&count=10`: 店舗検索。成功時は `{ data: { shops, pagination } }` を返します。
-
-HotPepper APIはエラー時もHTTP 200でXML/JSON本文に `results.error` を含める仕様のため、本文のエラーも判定します。アプリ側では入力不正を400、APIキー未設定を503、上流接続失敗を502、タイムアウトを504で返します。
-
-JSON形式の実レスポンスで `results_returned` が数字文字列になるケースを確認したため、この項目のみ数字のみの文字列も受け入れて数値へ正規化します。`results_available` と `results_start` は数値を要求し、その他のレスポンス検証は維持します。
-
-詳細は[HotPepper グルメサーチAPI公式リファレンス](https://webservicestr.hotpepper.jp/doc/hotpepper/reference.html)を参照してください。
-
-## API接続確認
-
-1. `npm run dev` を起動し、Homeで現在地を取得してから検索します。
-2. `curl http://localhost:3001/api/health` が `{"status":"ok"}` を返すことを確認します。
-3. `.env` に有効なキーを設定した上で、次を実行します。
+### 接続確認・困ったとき
 
 ```sh
-curl 'http://localhost:3001/api/shops?lat=35.66&lng=139.70&range=3&start=1&count=10'
+curl http://localhost:3001/api/health
+# {"status":"ok"}
 ```
 
-キー未設定時は `HOTPEPPER_API_KEY_MISSING` が返ります。無効キーや上流障害はHotPepper APIの仕様に基づくエラーとして返されます。
+キー設定後、公開場所の例示座標で接続確認できます。実際の現在地を共有する必要はありません。
 
-## 品質確認コマンド
+```sh
+curl 'http://localhost:3001/api/shops?lat=35.66&lng=139.70&range=3&start=1&count=12'
+```
+
+| 状況 | 確認すること |
+| --- | --- |
+| 503 / `HOTPEPPER_API_KEY_MISSING` | ルートの.env・サーバー環境変数・再起動 |
+| 502 / 上流エラー | キーの有効性、ネットワーク、外部サービスの状態 |
+| 504 / タイムアウト | 時間を置いて再試行。必要なら上流タイムアウト値を調整 |
+| 現在地の取得失敗 | HTTPS/localhost、ブラウザとOSの権限・位置情報設定 |
+| 画面からAPIに接続できない | 両サーバーの起動、PORTとプロキシの一致 |
+
+## テスト・ビルド
 
 ```sh
 npm run typecheck
 npm run build
-npm test --workspace @chikameshi/frontend
-npm test --workspace @chikameshi/backend
+npm test
 npm audit
 git diff --check
-git check-ignore .env
 ```
 
-お気に入り、認証は対象外です。
+個別に実行する場合は `npm test --workspace @chikameshi/frontend` または `npm test --workspace @chikameshi/backend` を使用します。バックエンドは `src` 配下の `.test.ts` を再帰的に探索するため、新しいテストをコマンドへ列挙する必要はありません。
 
-### 店舗検索画面
+テストは上流APIをモックするため、キーや位置情報権限なしで実行できます。テスト結果は実APIや実機での動作確認を代替しません。GitHub Actionsはpush・PRで同じ検証を実行します。設定を追加しただけではCIが成功したことにはならず、実行結果の確認が必要です。
 
-Homeで検索範囲を選び、現在地を取得してから検索します。検索結果はAPIから取得し、12件ずつページングします。店舗を選ぶと店舗IDで詳細を取得します。エラー時にサンプルデータへ切り替えることはありません。
+`npm run build` は `frontend/dist` と `backend/dist` を生成します。`npm start --workspace @chikameshi/backend` でビルドしたAPIサーバーを起動できます。これはフロントの静的ファイルを配信するコマンドではありません。
 
-検索座標はメモリ内にのみ保持します。履歴には識別子のみ保存し、再読み込みした検索結果画面ではHomeから現在地を取得し直してください。詳細URLは座標なしで再読み込み・共有できます。APIキーはサーバー側のルート `.env` または環境変数で設定します。
+## 通信・API仕様
+
+- `GET /api/health`：サーバーの生存確認
+- `GET /api/shops?lat=...&lng=...&range=...&start=...&count=...`：一覧。成功時は `{ data: { shops, pagination } }`
+- `GET /api/shops/:id`：詳細。成功時は `{ data: shop }`、見つからない場合は404
+
+`range` は1=300m、2=500m、3=1km、4=2km、5=3km。`start` は1始まり、`count` は1〜100件です。営業時間等も取得するため `type=lite` は指定しません。仕様は[公式リファレンス](https://webservice.recruit.co.jp/doc/hotpepper/reference.html)を参照してください。
+
+HTTP 200でも上流のエラー本文を判定します。上流の `results_returned` は数値と数字のみの文字列を受け入れ、店舗ID・座標・件数・取得範囲の整合性は検証します。説明文の欠損は代替表示しますが、壊れた構造を店舗情報として表示しません。
+
+ブラウザから自前APIへの通信は、本文の受信を含め35秒で打ち切ります。通信失敗・タイムアウト・APIエラー・形式不正を分類し、入力不正や404では解決しない再試行を表示しません。画面遷移時は中断し、古い応答を無効化します。同条件の再試行連打や取得中の再送も抑止します。
+
+## セキュリティ・プライバシー
+
+- キーはサーバー内でのみ使用し、応答・画面・例外ログへそのまま出しません。
+- `.env` はGit管理対象外です。スクリーンショットや問い合わせにもキーを含めないでください。
+- 現在地はメモリ内に保持し、画面URL・ブラウザ履歴・localStorage・sessionStorageへ保存しません。履歴には位置情報を含まない識別子だけを保持します。
+- 検索時の座標は自前APIとHotPepper APIへ送信します。外部の画像・地図・店舗リンクを利用すると、その外部サービスへの通信が発生します。
+- 店舗APIは `Cache-Control: no-store` とし、ブラウザ側もキャッシュを使いません。公開配信のアクセスログにも検索クエリを記録しないよう設定してください。
+- 外部URLはHTTP/HTTPSのみに制限します。
+
+## 既知の制約・確認事項
+
+- 検索結果画面の再読み込み・共有では座標を復元せず、現在地の取得からやり直します。詳細URLは店舗IDだけで取得できます。
+- 位置情報の履歴は最大20検索です。古い履歴では再取得が必要です。
+- 取得済みの現在地は自動更新しません。移動後はHomeで取り直してください。
+- DB・認証・お気に入り・アプリ内地図はありません。
+- バックエンドにレート制限はありません。公開運用時はAPIの利用枠と公開範囲を確認してください。
+- レスポンシブの実ブラウザ検証と実端末・スクリーンリーダー検証は区別して記録します。対象OS・ブラウザの正式なサポート範囲は提出用簡易仕様書で別途定義してください。
+
+## 今回の検証記録（2026-11-25）
+
+- ローカル環境：Node.js 24.6.0 / npm 11.5.1。型チェック・ビルド・フロント74件／バック42件のテストが成功。
+- `npm audit` は脆弱性0件。実キーを含まない一時コピーでも `npm ci` と開発サーバーの起動を確認。
+- Chrome 158.0.8127.38（headless）で幅320・375・768・1440pxを検証。検索・詳細・ページ変更・0件からの範囲変更・エラー復帰・キーボード操作・タイトルとフォーカス・戻る／進むとスクロール復元を確認。検査した状態で横はみ出しなし。
+- axeによるHome・一覧・詳細・0件・エラーの計20状態のWCAG 2 A/AA・2.1 AA自動検査は違反0件。自動検査はアクセシビリティ全体の適合を保証するものではありません。
+- ブラウザの店舗データ・画像・位置情報は検証用の固定値。ヘルスチェックとキー未設定の503は実際のローカルAPI経由で確認し、その後の正常系はAPIモックで検証しました。
+- 上記の自動ブラウザ検証とは別に、設定済みのAPIキーを使った実HotPepper APIの疎通を確認し、店舗検索がHTTP 200で12件返ることを確認しました。利用者による実ブラウザでの操作確認も完了しています（端末・ブラウザの詳細は未記録）。
+- スマートフォン実機・Safari/Firefox・実スクリーンリーダーの確認は未実施。Node.js 22系を含むGitHub Actionsの実行結果は、push後に別途確認が必要です。
+
+CIの設定方法は[checkout](https://github.com/actions/checkout)・[setup-node](https://github.com/actions/setup-node)の公式資料に従っています。

@@ -10,7 +10,7 @@ import { HotPepperServiceError } from "../types/hotpepper.js";
 const API_URL = "https://webservice.recruit.co.jp/hotpepper/gourmet/v1/";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -22,7 +22,7 @@ function isString(value: unknown): value is string {
 }
 
 function parseResultsReturned(value: unknown): number {
-  if (isFiniteNumber(value) && Number.isInteger(value) && value >= 0) return value;
+  if (isFiniteNumber(value) && Number.isSafeInteger(value) && value >= 0) return value;
   if (typeof value === "string" && /^\d+$/.test(value)) {
     const parsed = Number(value);
     if (Number.isSafeInteger(parsed)) return parsed;
@@ -32,12 +32,12 @@ function parseResultsReturned(value: unknown): number {
 
 function parseShop(value: unknown): HotPepperShop {
   if (!isRecord(value)
-    || !isString(value.id)
+    || !isString(value.id) || !/^J[0-9]{9}$/.test(value.id)
     || (value.name != null && !isString(value.name))
     || (value.address != null && !isString(value.address))
     || (value.access != null && !isString(value.access))
-    || !isFiniteNumber(value.lat)
-    || !isFiniteNumber(value.lng)) {
+    || !isFiniteNumber(value.lat) || Math.abs(value.lat) > 90
+    || !isFiniteNumber(value.lng) || Math.abs(value.lng) > 180) {
     throw new HotPepperServiceError("HotPepper API returned an invalid shop record.");
   }
 
@@ -120,6 +120,7 @@ export async function getShopById(id: string): Promise<HotPepperShop | null> {
   return result.shops.find((shop) => shop.id === id) ?? null;
 }
 
+/** 秘密のAPIキーはサーバー内に閉じ込め、本文読込までタイムアウトで保護する。 */
 async function requestShops(params: Record<string, string>, count: number): Promise<ShopSearchResponse> {
   const apiKey = process.env.HOTPEPPER_API_KEY?.trim();
   if (!apiKey) {
@@ -172,7 +173,7 @@ async function requestShops(params: Record<string, string>, count: number): Prom
     }
 
     const results = parseResults(payload);
-    // The official API can report errors in a 200 response body.
+    // HTTP 200でもAPIのエラー本文が返るため、成功ステータスだけでは判断しない。
     if (results.error) {
       const apiError = Array.isArray(results.error) ? results.error[0] : results.error;
       const code = Number(apiError?.code);
@@ -191,6 +192,14 @@ async function requestShops(params: Record<string, string>, count: number): Prom
         : [results.shop]
       : [];
 
+    // 件数やIDの矛盾を境界で拒否し、壊れたページングを画面へ渡さない。
+    if (results.results_returned !== shops.length || shops.length > count
+      || shops.length > results.results_available
+      || (shops.length > 0 && results.results_start + shops.length - 1 > results.results_available)
+      || results.results_start !== Number(params.start)
+      || new Set(shops.map((shop) => shop.id)).size !== shops.length) {
+      throw new HotPepperServiceError("HotPepper API returned inconsistent pagination metadata.");
+    }
     return {
       shops,
       pagination: {

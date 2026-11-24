@@ -11,6 +11,7 @@ function parseNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// 上流APIを呼ぶ前に入力を検証し、不要な通信と利用枠の消費を防ぐ。
 shopsRouter.get("/", async (request, response, next) => {
   const lat = parseNumber(request.query.lat);
   const lng = parseNumber(request.query.lng);

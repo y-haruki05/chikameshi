@@ -4,8 +4,8 @@ import { SiteHeader } from "./components/SiteHeader";
 import { DetailPage } from "./pages/DetailPage";
 import { HomePage } from "./pages/HomePage";
 import { ResultsPage } from "./pages/ResultsPage";
-import type { SearchRange } from "./types/demo";
-import { isSearchRange } from "./types/demo";
+import type { SearchRange } from "./types/search";
+import { isSearchRange } from "./types/search";
 
 import { useGeolocation } from "./hooks/useGeolocation";
 import type { Coordinates } from "./hooks/useGeolocation";
@@ -50,7 +50,7 @@ function getSessionId(): string | null {
 
 export default function App() {
   const geolocation = useGeolocation();
-  // Keep coordinates in memory, never in the page URL or history state.
+  // 位置情報を履歴・URL・永続ストレージに残さず、共有やログ経由の漏洩を防ぐ。
   const sessions = useRef(new Map<string, Coordinates>());
   const [sessionId, setSessionId] = useState<string | null>(getSessionId);
   const searchCoordinates = sessionId ? sessions.current.get(sessionId) ?? null : null;
@@ -80,14 +80,17 @@ export default function App() {
     };
   }, []);
 
-  // Restore only once the destination has enough content to scroll.
+  // ローディング中は高さが足りないため、データが表示された後に一度だけ位置を戻す。
   const restoreScroll = useCallback(() => {
     if (pendingScroll.current === null) return;
     window.scrollTo({ top: pendingScroll.current, behavior: "instant" });
     pendingScroll.current = null;
   }, [route]);
   useLayoutEffect(() => {
-    if (route.name === "home") restoreScroll();
+    if (route.name === "home") {
+      restoreScroll();
+      if (window.location.hash === "#how-it-works") document.getElementById("how-it-works")?.scrollIntoView({ block: "start" });
+    }
   }, [route.name, restoreScroll]);
 
   useEffect(() => {
@@ -110,7 +113,7 @@ export default function App() {
     if (!coordinates) return;
     const id = createEntryKey();
     sessions.current.set(id, coordinates);
-    // Bound retained location history; older entries require a fresh location.
+    // メモリに保持する位置情報を20検索に制限し、古い履歴では再取得を求める。
     if (sessions.current.size > 20) {
       const oldest = sessions.current.keys().next().value;
       if (oldest !== undefined) sessions.current.delete(oldest);
@@ -158,9 +161,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#fbfaf7] text-[#202b25]">
+      <a href="#main-content" className="skip-link">本文へ移動</a>
       <SiteHeader onNavigate={(href) => navigate(href)} />
       {content}
-      <SiteFooter />
+      <SiteFooter onNavigate={() => navigate("/")} />
     </div>
   );
 }

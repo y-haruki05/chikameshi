@@ -8,25 +8,68 @@ export interface ShopSearchParams {
   count?: number;
 }
 
+export type ShopApiErrorKind = "network" | "timeout" | "api" | "not-found" | "invalid-request" | "invalid-response";
+
 export class ShopApiError extends Error {
-  constructor(message: string, public readonly status = 0) { super(message); }
+  constructor(
+    message: string,
+    public readonly status = 0,
+    public readonly kind: ShopApiErrorKind = "invalid-response",
+  ) {
+    super(message);
+    this.name = "ShopApiError";
+  }
+
+  get retryable() { return this.kind !== "not-found" && this.kind !== "invalid-request"; }
 }
 
+// バックエンドの上流タイムアウト（最大30秒）に余裕を持たせる。
+export const REQUEST_TIMEOUT_MS = 35_000;
+
+/** 本文の受信まで時間制限を適用し、画面遷移による中断を通信障害として表示しない。 */
 async function request(path: string, signal?: AbortSignal): Promise<unknown> {
-  let response: Response;
-  try { response = await fetch(path, { signal }); }
+  const controller = new AbortController();
+  let timedOut = false;
+  let rejectAborted!: (reason: unknown) => void;
+  const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject; });
+  const cancel = () => controller.abort();
+  const onAbort = () => rejectAborted(timedOut
+    ? new ShopApiError("通信がタイムアウトしました。もう一度お試しください。", 0, "timeout")
+    : new DOMException("Request cancelled", "AbortError"));
+  controller.signal.addEventListener("abort", onAbort, { once: true });
+  signal?.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+  // 中断を無視する通信実装でも画面のローディングを終了させるため、明示的にraceする。
+  const receive = async () => {
+    if (signal?.aborted) { cancel(); throw new DOMException("Request cancelled", "AbortError"); }
+    const response = await fetch(path, { signal: controller.signal, cache: "no-store" });
+    if (!response.ok) {
+      if (response.status === 404) throw new ShopApiError("お店が見つかりませんでした。", 404, "not-found");
+      if (response.status === 400) throw new ShopApiError("検索条件を確認して、もう一度検索してください。", 400, "invalid-request");
+      if (response.status === 504 || response.status === 408) throw new ShopApiError("検索がタイムアウトしました。もう一度お試しください。", response.status, "timeout");
+      // サーバーの応答本文には内部情報が含まれ得るため、そのまま画面に出さない。
+      throw new ShopApiError("お店の情報を取得できませんでした。少し時間をおいて再試行してください。", response.status, "api");
+    }
+    let body: unknown;
+    try { body = await response.json(); }
+    catch (error) {
+      if (error instanceof SyntaxError) throw new ShopApiError("お店の情報を読み込めませんでした。もう一度お試しください。");
+      throw error;
+    }
+    if (!isRecord(body) || !("data" in body)) throw new ShopApiError("お店の情報を読み込めませんでした。もう一度お試しください。");
+    return body.data;
+  };
+  try { return await Promise.race([aborted, receive()]); }
   catch (error) {
-    if (signal?.aborted) throw error;
-    throw new ShopApiError("通信に失敗しました。少し時間をおいて再試行してください。");
+    if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
+    if (timedOut) throw new ShopApiError("通信がタイムアウトしました。もう一度お試しください。", 0, "timeout");
+    if (error instanceof ShopApiError) throw error;
+    throw new ShopApiError("通信に失敗しました。接続を確認して再試行してください。", 0, "network");
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
+    controller.signal.removeEventListener("abort", onAbort);
   }
-  if (!response.ok) {
-    throw new ShopApiError(response.status === 404 ? "お店が見つかりませんでした。" : response.status === 504
-      ? "検索がタイムアウトしました。もう一度お試しください。" : "お店の情報を取得できませんでした。少し時間をおいて再試行してください。", response.status);
-  }
-  let body: unknown;
-  try { body = await response.json(); } catch { throw new ShopApiError("お店の情報を読み込めませんでした。もう一度お試しください。"); }
-  if (!isRecord(body) || !("data" in body)) throw new ShopApiError("お店の情報を読み込めませんでした。もう一度お試しください。");
-  return body.data;
 }
 
 export async function searchShops(params: ShopSearchParams, signal?: AbortSignal): Promise<ShopSearchResponse> {
@@ -38,6 +81,8 @@ export async function searchShops(params: ShopSearchParams, signal?: AbortSignal
   const p = data.pagination;
   if (!nonnegativeInteger(p.total) || !nonnegativeInteger(p.returned) || !positiveInteger(p.start) || !positiveInteger(p.count)
     || p.count > 100 || p.returned !== data.shops.length || p.returned > p.count || p.returned > p.total
+    || (p.returned > 0 && p.start + p.returned - 1 > p.total)
+    || new Set(shops.map((shop) => shop.id)).size !== shops.length
     || p.start !== (params.start ?? 1) || p.count !== (params.count ?? 12)) throw new ShopApiError("検索結果の件数を読み込めませんでした。");
   return { shops, pagination: { total: p.total, returned: p.returned, start: p.start, count: p.count } };
 }
@@ -48,7 +93,7 @@ export async function getShop(id: string, signal?: AbortSignal): Promise<Shop> {
   return data;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null; }
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function nonnegativeInteger(value: unknown): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0; }
 function positiveInteger(value: unknown): value is number { return nonnegativeInteger(value) && value > 0; }
 function optionalStrings(value: unknown, keys: string[]): boolean {
@@ -66,7 +111,7 @@ function isShop(value: unknown): value is Shop {
     && (value.photo === undefined || (isRecord(value.photo) && optionalStrings(value.photo.pc, ["l", "m", "s"])));
 }
 
-// Null/missing text from the API is absent information, not a failed search.
+// 説明文の欠損は代替表示に回す。一方、識別子・座標・構造の不正は許容しない。
 function normalizeShop(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const text = (input: unknown) => typeof input === "string" ? input.trim() : input ?? undefined;

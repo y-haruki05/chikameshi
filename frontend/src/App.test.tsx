@@ -161,6 +161,7 @@ it.each([503, 504])("shows API error %s without samples and retries the same sea
   fireEvent.click(screen.getByRole("button", { name: "再読み込み" }));
   await screen.findByText("実店舗1");
   expect(lastSearch().get("lat")).toBe("35.681234");
+  expect(document.activeElement).toBe(screen.getByRole("main"));
 });
 it("aborts stale searches and ignores late results after a range change", async () => {
   let resolveOld!: (response: Response) => void;
@@ -311,4 +312,30 @@ it("keeps cards usable when descriptive text and images are missing", async () =
   expect(screen.getByRole("button", { name: "店舗名不明の詳細を見る" })).toBeTruthy();
   expect(screen.getByText("アクセス情報なし")).toBeTruthy();
   expect(screen.getByText("予算情報なし")).toBeTruthy();
+});
+
+
+it("updates screen titles and moves keyboard focus after navigation", async () => {
+  render(<App />);
+  expect(document.title).toBe("近くのお店を探す | ちかめし");
+  acquireAndSearch();
+  await screen.findByText("実店舗1");
+  expect(document.title).toBe("お店一覧 | ちかめし");
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  fireEvent.click(screen.getByRole("button", { name: "実店舗1の詳細を見る" }));
+  await screen.findByRole("heading", { name: "実店舗1" });
+  expect(document.title).toBe("実店舗1 | ちかめし");
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  fireEvent.click(screen.getByRole("button", { name: "検索結果に戻る" }));
+  await screen.findByText("全25件中1〜12件を表示");
+  expect(document.title).toBe("お店一覧 | ちかめし");
+});
+it("avoids a futile retry for invalid conditions and can search with a new range", async () => {
+  fetchMock.mockResolvedValueOnce(json({}, 400));
+  render(<App />); acquireAndSearch(); await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: "再読み込み" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /検索範囲を変更/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "2km" }));
+  fireEvent.click(screen.getByRole("button", { name: "この範囲で表示" }));
+  await screen.findByText("実店舗1");
 });
