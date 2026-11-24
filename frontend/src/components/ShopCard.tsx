@@ -1,9 +1,9 @@
-import { ArrowUpRight, MapPin, Star, Wallet } from "lucide-react";
-import type { DemoShop } from "../types/demoShop";
+import { ArrowUpRight, MapPin, Wallet } from "lucide-react";
+import type { Shop } from "../types/shop";
 import { ShopImage } from "./ShopImage";
 
 interface ShopCardProps {
-  shop: DemoShop;
+  shop: Shop;
   onSelect: (id: string) => void;
 }
 
@@ -13,7 +13,6 @@ export function ShopCard({ shop, onSelect }: ShopCardProps) {
       <button type="button" onClick={() => onSelect(shop.id)} className="block w-full text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-[#d9937b]" aria-label={`${shop.name}の詳細を見る`}>
         <div className="relative overflow-hidden">
           <ShopImage shop={shop} className="aspect-[1.58] w-full transition duration-500 group-hover:scale-[1.025]" sizes="(min-width: 900px) 42vw, 90vw" />
-          <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-[#27342c]/90 px-2.5 py-1.5 text-[10px] font-semibold text-white backdrop-blur"><Star size={11} fill="currentColor" aria-hidden="true" />{shop.reviewScore}</span>
         </div>
         <div className="p-4 sm:p-5">
           <div className="flex items-start justify-between gap-3">

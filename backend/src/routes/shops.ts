@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { searchShops } from "../services/hotpepperService.js";
+import { getShopById, searchShops } from "../services/hotpepperService.js";
 import { HOTPEPPER_RANGES, HotPepperRange } from "../types/hotpepper.js";
 
 export const shopsRouter = Router();
+shopsRouter.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
 
 function parseNumber(value: unknown): number | null {
   if (typeof value !== "string" || value.trim() === "") return null;
@@ -29,7 +30,7 @@ shopsRouter.get("/", async (request, response, next) => {
     response.status(400).json({ error: { code: "INVALID_RANGE", message: "range must be one of 1, 2, 3, 4, or 5." } });
     return;
   }
-  if (start === null || !Number.isInteger(start) || start < 1) {
+  if (start === null || !Number.isSafeInteger(start) || start < 1) {
     response.status(400).json({ error: { code: "INVALID_START", message: "start must be a positive integer." } });
     return;
   }
@@ -50,4 +51,20 @@ shopsRouter.get("/", async (request, response, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+shopsRouter.get("/:id", async (request, response, next) => {
+  const id = request.params.id;
+  if (!/^J[0-9]{9}$/.test(id)) {
+    response.status(400).json({ error: { code: "INVALID_SHOP_ID", message: "Invalid shop ID." } });
+    return;
+  }
+  try {
+    const shop = await getShopById(id);
+    if (!shop) {
+      response.status(404).json({ error: { code: "SHOP_NOT_FOUND", message: "Shop not found." } });
+      return;
+    }
+    response.json({ data: shop });
+  } catch (error) { next(error); }
 });

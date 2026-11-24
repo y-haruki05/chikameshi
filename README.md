@@ -1,6 +1,6 @@
 # nearby-eats
 
-HotPepper グルメサーチAPIを使って、現在地付近の飲食店を探すWebアプリです。このIssueでは開発環境、API連携の土台、バックエンド接続確認画面を用意します。
+HotPepper グルメサーチAPIを使って、現在地付近の飲食店を探すWebアプリです。ブラウザで取得した現在地と検索範囲を使い、店舗一覧・詳細を表示します。
 
 ## 使用技術
 
@@ -64,11 +64,12 @@ HotPepperグルメサーチAPIの公式仕様に合わせて、バックエン�
 - `range`: 1=300m、2=500m、3=1000m、4=2000m、5=3000m
 - `start`: 1始まりの取得開始位置
 - `count`: 1〜100件
-- `format=json`, `type=lite`
+- `format=json`（営業時間・席数も取得するため、`type=lite`は指定しません）
 
 アプリ内API:
 
 - `GET /api/health`: バックエンド生存確認。APIキー不要。
+- `GET /api/shops/:id`: 店舗IDで詳細を取得。成功時は `{ data: shop }`、未掲載の場合は404。
 - `GET /api/shops?lat=35.66&lng=139.70&range=3&start=1&count=10`: 店舗検索。成功時は `{ data: { shops, pagination } }` を返します。
 
 HotPepper APIはエラー時もHTTP 200でXML/JSON本文に `results.error` を含める仕様のため、本文のエラーも判定します。アプリ側では入力不正を400、APIキー未設定を503、上流接続失敗を502、タイムアウトを504で返します。
@@ -79,7 +80,7 @@ JSON形式の実レスポンスで `results_returned` が数字文字列にな�
 
 ## API接続確認
 
-1. `npm run dev` を起動し、画面に「バックエンドに接続しました」と表示されることを確認します。
+1. `npm run dev` を起動し、Homeで現在地を取得してから検索します。
 2. `curl http://localhost:3001/api/health` が `{"status":"ok"}` を返すことを確認します。
 3. `.env` に有効なキーを設定した上で、次を実行します。
 
@@ -89,17 +90,22 @@ curl 'http://localhost:3001/api/shops?lat=35.66&lng=139.70&range=3&start=1&count
 
 キー未設定時は `HOTPEPPER_API_KEY_MISSING` が返ります。無効キーや上流障害はHotPepper APIの仕様に基づくエラーとして返されます。
 
-## 既知の依存脆弱性
-
-2026-11-18の `npm audit` では `picomatch@4.0.7` のHigh脆弱性（GHSA-fc5q-39xc-vjpf / CVE-2026-112366、細工したextglobパターンによるReDoS）が報告されています。依存経路は `vite -> tinyglobby/fdir -> picomatch` です。現時点でadvisoryに修正版は掲載されていません。`npm audit fix --dry-run` でも変更案は提示されなかったため、脆弱な版を無理にoverrideしていません。Vite開発サーバーはlocalhostに限定しています。この依存は開発・ビルド用ですが、依存ツリー上の脆弱性は未解消です。picomatchまたは上流依存の修正版が公開されたら更新し、`npm audit` とビルド・テストを再確認してください。
-
 ## 品質確認コマンド
 
 ```sh
 npm run typecheck
 npm run build
+npm test --workspace @nearby-eats/frontend
 npm test --workspace @nearby-eats/backend
+npm audit
+git diff --check
 git check-ignore .env
 ```
 
-店舗検索画面、現在地取得UI、一覧、詳細、お気に入り、認証は後続Issueで実装します。
+お気に入り、認証は対象外です。
+
+### 店舗検索画面
+
+Homeで検索範囲を選び、現在地を取得してから検索します。検索結果はAPIから取得し、12件ずつページングします。店舗を選ぶと店舗IDで詳細を取得します。エラー時にサンプルデータへ切り替えることはありません。
+
+検索座標はメモリ内にのみ保持します。履歴には識別子のみ保存し、再読み込みした検索結果画面ではHomeから現在地を取得し直してください。詳細URLは座標なしで再読み込み・共有できます。APIキーはサーバー側のルート `.env` または環境変数で設定します。
