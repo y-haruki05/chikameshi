@@ -14,6 +14,7 @@ export function SiteFooter({ onNavigate }: { onNavigate: () => void }) {
           <a href="https://webservice.recruit.co.jp/" target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1 font-medium text-[#58645b] underline decoration-[#aab5aa] underline-offset-4 hover:text-[#a84f35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c75d3e]">
             Powered by ホットペッパーグルメ Webサービス <ArrowUpRight size={12} aria-hidden="true" />
           </a>
+          <p className="mt-2">画像提供：ホットペッパー グルメ</p>
         </div>
       </div>
     </footer>
